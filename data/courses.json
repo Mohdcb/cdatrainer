@@ -1,0 +1,30 @@
+[
+  {
+    "id": "c1",
+    "name": "Full Stack Web Development",
+    "description": "Comprehensive course covering frontend and backend development",
+    "duration": 12,
+    "subjects": ["s1", "s2", "s3", "s4", "s5"]
+  },
+  {
+    "id": "c2",
+    "name": "Data Science & Machine Learning",
+    "description": "Complete data science program with ML fundamentals",
+    "duration": 10,
+    "subjects": ["s6", "s7", "s8", "s9"]
+  },
+  {
+    "id": "c3",
+    "name": "UI/UX Design Bootcamp",
+    "description": "Design thinking and user experience fundamentals",
+    "duration": 8,
+    "subjects": ["s10", "s11", "s12", "s13"]
+  },
+  {
+    "id": "c4",
+    "name": "Digital Marketing Mastery",
+    "description": "Complete digital marketing strategy and execution",
+    "duration": 6,
+    "subjects": ["s14", "s15", "s16"]
+  }
+]

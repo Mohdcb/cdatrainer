@@ -1,0 +1,122 @@
+[
+  {
+    "id": "t1",
+    "name": "Sarah Johnson",
+    "email": "sarah.johnson@company.com",
+    "locations": ["Kochi", "Online"],
+    "expertise": ["HTML & CSS Fundamentals", "JavaScript Fundamentals", "React Fundamentals"],
+    "priority": "Senior",
+    "timeSlots": ["09:00-11:00", "14:00-16:00", "18:00-20:00"],
+    "availability": {
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": false,
+      "sunday": false
+    },
+    "leaves": [{ "startDate": "2024-01-15", "endDate": "2024-01-19", "reason": "Vacation", "status": "approved" }],
+    "status": "active"
+  },
+  {
+    "id": "t2",
+    "name": "Michael Chen",
+    "email": "michael.chen@company.com",
+    "locations": ["Calicut", "Online"],
+    "expertise": ["Python Fundamentals", "Django Framework", "Database Management"],
+    "priority": "Senior",
+    "timeSlots": ["10:00-12:00", "15:00-17:00"],
+    "availability": {
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": false,
+      "sunday": false
+    },
+    "leaves": [],
+    "status": "active"
+  },
+  {
+    "id": "t3",
+    "name": "Emily Rodriguez",
+    "email": "emily.rodriguez@company.com",
+    "locations": ["Online"],
+    "expertise": ["UI/UX Design Fundamentals", "Advanced Design Concepts", "Communication Skills"],
+    "priority": "Core",
+    "timeSlots": ["08:00-10:00", "16:00-18:00", "19:00-21:00"],
+    "availability": {
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": true,
+      "sunday": true
+    },
+    "leaves": [],
+    "status": "active"
+  },
+  {
+    "id": "t4",
+    "name": "David Kim",
+    "email": "david.kim@company.com",
+    "locations": ["Kochi"],
+    "expertise": ["JavaScript Fundamentals", "React Fundamentals", "Node.js Fundamentals"],
+    "priority": "Core",
+    "timeSlots": ["09:00-17:00"],
+    "availability": {
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": false,
+      "sunday": false
+    },
+    "leaves": [{ "startDate": "2024-02-05", "endDate": "2024-02-09", "reason": "Conference", "status": "approved" }],
+    "status": "active"
+  },
+  {
+    "id": "t5",
+    "name": "Lisa Thompson",
+    "email": "lisa.thompson@company.com",
+    "locations": ["Calicut"],
+    "expertise": ["Digital Marketing Fundamentals", "Advanced Marketing Strategies"],
+    "priority": "Junior",
+    "timeSlots": ["09:00-17:00"],
+    "availability": {
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": false,
+      "sunday": false
+    },
+    "leaves": [],
+    "status": "active"
+  },
+  {
+    "id": "t6",
+    "name": "Alex Kumar",
+    "email": "alex.kumar@company.com",
+    "locations": ["Online", "Kochi"],
+    "expertise": ["Communication Skills"],
+    "priority": "Senior",
+    "timeSlots": ["10:00-12:00", "14:00-16:00", "18:00-20:00"],
+    "availability": {
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": true,
+      "sunday": true
+    },
+    "leaves": [],
+    "status": "active"
+  }
+]

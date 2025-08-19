@@ -1,0 +1,18 @@
+[
+  { "id": "s1", "name": "HTML & CSS Fundamentals", "duration": 2 },
+  { "id": "s2", "name": "JavaScript Essentials", "duration": 3 },
+  { "id": "s3", "name": "React Development", "duration": 3 },
+  { "id": "s4", "name": "Node.js & Express", "duration": 2 },
+  { "id": "s5", "name": "Database Design & Integration", "duration": 2 },
+  { "id": "s6", "name": "Python for Data Science", "duration": 3 },
+  { "id": "s7", "name": "Data Analysis & Visualization", "duration": 2 },
+  { "id": "s8", "name": "Machine Learning Basics", "duration": 3 },
+  { "id": "s9", "name": "Advanced ML & Deployment", "duration": 2 },
+  { "id": "s10", "name": "Design Thinking", "duration": 2 },
+  { "id": "s11", "name": "Wireframing & Prototyping", "duration": 2 },
+  { "id": "s12", "name": "Visual Design Principles", "duration": 2 },
+  { "id": "s13", "name": "User Testing & Iteration", "duration": 2 },
+  { "id": "s14", "name": "SEO & Content Marketing", "duration": 2 },
+  { "id": "s15", "name": "Social Media Strategy", "duration": 2 },
+  { "id": "s16", "name": "Analytics & Performance", "duration": 2 }
+]

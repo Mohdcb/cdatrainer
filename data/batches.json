@@ -1,0 +1,52 @@
+[
+  {
+    "id": "b1",
+    "name": "FSWD-2024-Q1",
+    "courseId": "c1",
+    "location": "Kochi",
+    "startDate": "2024-01-08",
+    "endDate": "2024-03-29",
+    "status": "active",
+    "maxStudents": 25,
+    "currentStudents": 22,
+    "generatedSchedule": []
+  },
+  {
+    "id": "b2",
+    "name": "DS-ML-2024-Q1",
+    "courseId": "c2",
+    "location": "Calicut",
+    "startDate": "2024-01-15",
+    "endDate": "2024-03-22",
+    "status": "active",
+    "maxStudents": 20,
+    "currentStudents": 18,
+    "generatedSchedule": []
+  },
+  {
+    "id": "b3",
+    "name": "UIUX-2024-Q1",
+    "courseId": "c3",
+    "location": "Online",
+    "startDate": "2024-02-01",
+    "endDate": "2024-03-28",
+    "status": "scheduled",
+    "maxStudents": 15,
+    "currentStudents": 12,
+    "timeSlot": "morning",
+    "generatedSchedule": []
+  },
+  {
+    "id": "b4",
+    "name": "DM-2024-Q1",
+    "courseId": "c4",
+    "location": "Online",
+    "startDate": "2024-02-15",
+    "endDate": "2024-04-15",
+    "status": "scheduled",
+    "maxStudents": 30,
+    "currentStudents": 25,
+    "timeSlot": "evening",
+    "generatedSchedule": []
+  }
+]
