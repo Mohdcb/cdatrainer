@@ -12,6 +12,7 @@ import { Label } from "../../components/ui/label"
 import { Textarea } from "../../components/ui/textarea"
 import { Plus, Search, Edit, Clock, BookOpen, Users } from "lucide-react"
 import type { Course } from "../../hooks/useData"
+import { getSupabaseClient } from "../../lib/supabaseClient"
 
 export default function CoursesPage() {
   const { courses, subjects, setCourses, batches, loading } = useData()
@@ -36,10 +37,41 @@ export default function CoursesPage() {
     return batches.filter((batch) => batch.courseId === courseId)
   }
 
-  const handleAddCourse = () => {
+  const handleAddCourse = async () => {
+    const supabase = getSupabaseClient()
+    const totalDuration = formData.subjects.reduce((sum, subjectId) => {
+      const s = subjects.find((sub) => sub.id === subjectId)
+      return sum + (s ? Number(s.duration || 0) : 0)
+    }, 0)
+    const insertPayload = {
+      course_name: formData.name,
+      description: formData.description,
+      duration_days: totalDuration,
+    }
+    const { data, error } = await supabase.from("courses").insert(insertPayload).select("*").single()
+    if (error) {
+      console.error("Failed to add course:", error)
+      return
+    }
+    // Persist course curriculum order into course_subjects
+    const courseIdNum = Number(data.course_id ?? data.id)
+    if (formData.subjects.length > 0) {
+      const rows = formData.subjects.map((subjectId: string, idx: number) => ({
+        course_id: courseIdNum,
+        subject_id: Number.parseInt(subjectId),
+        position: idx,
+      }))
+      const { error: csError } = await supabase.from("course_subjects").insert(rows)
+      if (csError) {
+        console.error("Failed to insert course_subjects:", csError)
+      }
+    }
     const newCourse: Course = {
-      id: `c${courses.length + 1}`,
-      ...formData,
+      id: String(data.course_id ?? data.id),
+      name: data.course_name ?? formData.name,
+      description: data.description ?? formData.description,
+      duration: Number(data.duration_days ?? totalDuration),
+      subjects: [...formData.subjects],
     }
     setCourses([...courses, newCourse])
     setIsAddDialogOpen(false)
@@ -56,10 +88,39 @@ export default function CoursesPage() {
     })
   }
 
-  const handleUpdateCourse = () => {
+  const handleUpdateCourse = async () => {
     if (!editingCourse) return
+    const supabase = getSupabaseClient()
+    const totalDuration = formData.subjects.reduce((sum, subjectId) => {
+      const s = subjects.find((sub) => sub.id === subjectId)
+      return sum + (s ? Number(s.duration || 0) : 0)
+    }, 0)
+    const payload = {
+      course_name: formData.name,
+      description: formData.description,
+      duration_days: totalDuration,
+    }
+    const courseIdNum = Number.parseInt(editingCourse.id)
+    const { error } = await supabase.from("courses").update(payload).eq("course_id", courseIdNum)
+    if (error) {
+      console.error("Failed to update course:", error)
+      return
+    }
+    // Replace course_subjects rows with new order
+    await supabase.from("course_subjects").delete().eq("course_id", courseIdNum)
+    if (formData.subjects.length > 0) {
+      const rows = formData.subjects.map((subjectId: string, idx: number) => ({
+        course_id: courseIdNum,
+        subject_id: Number.parseInt(subjectId),
+        position: idx,
+      }))
+      const { error: csError } = await supabase.from("course_subjects").insert(rows)
+      if (csError) {
+        console.error("Failed to update course_subjects:", csError)
+      }
+    }
     const updatedCourses = courses.map((course) =>
-      course.id === editingCourse.id ? { ...course, ...formData } : course,
+      course.id === editingCourse.id ? { ...course, ...formData, duration: totalDuration } : course,
     )
     setCourses(updatedCourses)
     setEditingCourse(null)
@@ -165,6 +226,22 @@ export default function CoursesPage() {
                       />
                     </DialogContent>
                   </Dialog>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      const supabase = getSupabaseClient()
+                      const idNum = Number.parseInt(course.id)
+                      const { error } = await supabase.from("courses").delete().eq("course_id", idNum)
+                      if (error) {
+                        console.error("Failed to delete course:", error)
+                        return
+                      }
+                      setCourses(courses.filter((c) => c.id !== course.id))
+                    }}
+                  >
+                    Delete
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">

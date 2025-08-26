@@ -11,40 +11,71 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "../../components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select"
 import { Plus, Search, Edit, Calendar, MapPin, Users, BookOpen, Clock, AlertTriangle, RefreshCw } from "lucide-react"
-import { generateSchedule, calculateBatchEndDate } from "../../utils/schedulingUtils"
+import { generateSchedule, calculateBatchEndDate, optimizeSchedule } from "../../utils/schedulingUtils"
 import type { Batch } from "../../hooks/useData"
+import { getSupabaseClient } from "../../lib/supabaseClient"
 
 export default function BatchesPage() {
-  const { batches, courses, trainers, subjects, holidays, schedules, setBatches, loading } = useData()
+  const { batches, courses, trainers, subjects, holidays, schedules, setBatches, setSchedules, loading } = useData()
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null)
+  const [errorOpen, setErrorOpen] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string>("")
 
   const [formData, setFormData] = useState({
     name: "",
     courseId: "",
     location: "",
     timeSlot: "",
-    batchType: "weekday", // Added batch type for weekend/weekday
+    batchType: "weekday" as "weekday" | "weekend", // Added batch type for weekend/weekday
     startDate: "",
     endDate: "",
     maxStudents: 20,
     currentStudents: 0,
-    status: "scheduled" as "scheduled" | "active" | "completed",
+    status: "active" as "active" | "completed" | "cancelled",
   })
 
   const filteredBatches = batches.filter((batch) => batch.name.toLowerCase().includes(searchTerm.toLowerCase()))
 
-  const handleAddBatch = () => {
+  const handleAddBatch = async () => {
     const course = courses.find((c) => c.id === formData.courseId)
     const calculatedEndDate = course
       ? calculateBatchEndDate(formData.startDate, course, subjects, formData.batchType as "weekday" | "weekend")
       : formData.endDate
 
+    const supabase = getSupabaseClient()
+    const courseIdNum = Number.isNaN(Number.parseInt(formData.courseId)) ? null : Number.parseInt(formData.courseId)
+    const allowedStatuses = ["active", "completed", "cancelled"] as const
+    const statusSafe = allowedStatuses.includes(formData.status as any) ? formData.status : "active"
+    const insertPayload = {
+      batch_name: formData.name,
+      course_id: courseIdNum,
+      location: formData.location,
+      status: statusSafe,
+      start_date: formData.startDate,
+      end_date: calculatedEndDate,
+      current_students: formData.currentStudents,
+    }
+    const { data: inserted, error } = await supabase.from("batches").insert(insertPayload).select("*").single()
+    if (error) {
+      console.error("Failed to insert batch:", error)
+      setErrorMessage(error.message || "Failed to add batch")
+      setErrorOpen(true)
+      return
+    }
     const newBatch: Batch = {
-      id: `b${batches.length + 1}`,
-      ...formData,
-      endDate: calculatedEndDate, // Use calculated end date
+      id: String(inserted.batch_id ?? inserted.id),
+      name: inserted.batch_name,
+      courseId: String(inserted.course_id),
+      location: inserted.location,
+      timeSlot: undefined,
+      batchType: undefined,
+      startDate: inserted.start_date,
+      endDate: inserted.end_date,
+      status: inserted.status,
+      maxStudents: formData.maxStudents,
+      currentStudents: inserted.current_students ?? 0,
       generatedSchedule: [],
       subjectAssignments: [],
     }
@@ -87,30 +118,157 @@ export default function BatchesPage() {
       courseId: batch.courseId,
       location: batch.location,
       timeSlot: batch.timeSlot || "", // Include time slot in edit
-      batchType: batch.batchType || "weekday", // Include batch type in edit
+      batchType: (batch.batchType as "weekday" | "weekend") || "weekday", // Include batch type in edit
       startDate: batch.startDate,
       endDate: batch.endDate,
       maxStudents: batch.maxStudents,
       currentStudents: batch.currentStudents,
-      status: batch.status,
+      status: (batch.status as "active" | "completed" | "cancelled") || "active",
     })
   }
 
-  const handleUpdateBatch = () => {
+  const handleUpdateBatch = async () => {
     if (!editingBatch) return
-    const updatedBatches = batches.map((batch) => (batch.id === editingBatch.id ? { ...batch, ...formData } : batch))
+    const supabase = getSupabaseClient()
+    const courseIdNum = Number.isNaN(Number.parseInt(formData.courseId)) ? null : Number.parseInt(formData.courseId)
+    const allowedStatuses = ["active", "completed", "cancelled"] as const
+    const statusSafe = allowedStatuses.includes(formData.status as any) ? formData.status : "active"
+    const payload = {
+      batch_name: formData.name,
+      course_id: courseIdNum,
+      location: formData.location,
+      status: statusSafe,
+      start_date: formData.startDate,
+      end_date: formData.endDate,
+      current_students: formData.currentStudents,
+    }
+    const batchIdNum = Number.parseInt(editingBatch.id)
+    try {
+      const { error } = await supabase
+        .from("batches")
+        .update(payload)
+        .eq("batch_id", batchIdNum)
+        .select("*")
+        .single()
+      if (error) throw error
+    } catch (e: any) {
+      console.error("Failed to update batch:", e)
+      setErrorMessage(e?.message || "Failed to update batch")
+      setErrorOpen(true)
+    }
+    const updatedBatches = batches.map((batch) =>
+      batch.id === editingBatch.id
+        ? {
+            ...batch,
+            name: formData.name,
+            courseId: formData.courseId,
+            location: formData.location,
+            timeSlot: formData.timeSlot || undefined,
+            batchType: formData.batchType,
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+            maxStudents: formData.maxStudents,
+            currentStudents: formData.currentStudents,
+            status: formData.status,
+          }
+        : batch,
+    )
     setBatches(updatedBatches)
     setEditingBatch(null)
     resetForm()
   }
 
-  const handleGenerateSchedule = (batch: Batch) => {
+  const handleDeleteBatch = async (batchId: string) => {
+    const supabase = getSupabaseClient()
+    const batchIdNum = Number.parseInt(batchId)
+    try {
+      const { error } = await supabase.from("batches").delete().eq("batch_id", batchIdNum)
+      if (error) throw error
+    } catch (e: any) {
+      console.error("Failed to delete batch:", e)
+      setErrorMessage(e?.message || "Failed to delete batch")
+      setErrorOpen(true)
+      return
+    }
+    setBatches(batches.filter((b) => b.id !== batchId))
+  }
+
+  const handleGenerateSchedule = async (batch: Batch) => {
     const course = courses.find((c) => c.id === batch.courseId)
     if (!course) return
 
-    const schedule = generateSchedule(batch, course, subjects, trainers, holidays)
+    const schedule = optimizeSchedule(
+      generateSchedule(batch, course, subjects, trainers, holidays),
+      trainers,
+    )
     const updatedBatches = batches.map((b) => (b.id === batch.id ? { ...b, generatedSchedule: schedule } : b))
     setBatches(updatedBatches)
+
+    // Persist generated schedule to Supabase 'schedules' table
+    const supabase = getSupabaseClient()
+    const batchIdNum = Number.parseInt(batch.id)
+    const rows = schedule.map((s) => {
+      const [rawStart, rawEnd] = (s.timeSlot || "09:00-17:00").split("-")
+      const start_time = rawStart.length === 5 ? `${rawStart}:00` : rawStart
+      const end_time = rawEnd.length === 5 ? `${rawEnd}:00` : rawEnd
+      return {
+        batch_id: batchIdNum,
+        trainer_id: s.trainerId ? Number.parseInt(s.trainerId) : null,
+        subject_id: Number.isNaN(Number.parseInt(s.subjectId)) ? null : Number.parseInt(s.subjectId),
+        date: s.date,
+        start_time,
+        end_time,
+        status: "planned",
+      }
+    })
+    try {
+      // Replace any existing generated schedules for this batch
+      await supabase.from("schedules").delete().eq("batch_id", batchIdNum)
+      const insertable = rows.filter((r) => r.trainer_id !== null)
+      const skipped = rows.length - insertable.length
+      const { error: insError } = await supabase.from("schedules").insert(insertable)
+      if (insError) throw insError
+
+      // Refresh schedules in client state for this batch
+      const { data: fresh, error: fetchErr } = await supabase
+        .from("schedules")
+        .select("*")
+        .eq("batch_id", batchIdNum)
+      if (fetchErr) throw fetchErr
+
+      const batchIdStr = String(batchIdNum)
+      const refreshed = (fresh || []).map((s: any) => {
+        const startTime = s.start_time ?? "09:00:00"
+        const endTime = s.end_time ?? "17:00:00"
+        const timeSlot = `${String(startTime).slice(0,5)}-${String(endTime).slice(0,5)}`
+        const trainerId = s.trainer_id != null ? String(s.trainer_id) : undefined
+        const status = trainerId ? "assigned" : "unassigned"
+        return {
+          id: String(s.schedule_id ?? s.id),
+          batchId: batchIdStr,
+          courseId: batch.courseId,
+          date: s.date ?? "",
+          subjectId: String(s.subject_id ?? ""),
+          trainerId,
+          status,
+          timeSlot,
+          sessionType: "regular",
+        }
+      })
+      setSchedules((prev: any[]) => {
+        const others = (prev || []).filter((p: any) => p.batchId !== batchIdStr)
+        return [...others, ...refreshed]
+      })
+
+      if (skipped > 0) {
+        setErrorMessage(`${skipped} sessions had no trainer and were not saved. Use Regenerate or assign trainers.`)
+        setErrorOpen(true)
+      }
+    } catch (e) {
+      console.error("Failed to persist schedule:", e)
+      setErrorMessage((e as any)?.message || "Failed to persist schedule")
+      setErrorOpen(true)
+    }
   }
 
   const handleReassignTrainer = (batchId: string, subjectId: string, newTrainerId: string) => {
@@ -189,7 +347,7 @@ export default function BatchesPage() {
       endDate: "",
       maxStudents: 20,
       currentStudents: 0,
-      status: "scheduled",
+      status: "active",
     })
   }
 
@@ -205,6 +363,18 @@ export default function BatchesPage() {
 
   return (
     <MainLayout>
+      {/* Error Dialog */}
+      <Dialog open={errorOpen} onOpenChange={setErrorOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-red-700">{errorMessage}</div>
+          <div className="flex justify-end pt-2">
+            <Button onClick={() => setErrorOpen(false)}>OK</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       {/* Page Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -526,7 +696,7 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
           courses,
           formData.batchType as "weekday" | "weekend",
         )
-        setFormData((prev) => ({ ...prev, startDate, endDate: calculatedEndDate }))
+        setFormData((prev: any) => ({ ...prev, startDate, endDate: calculatedEndDate }))
       }
     }
   }
@@ -543,7 +713,7 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
           courses,
           formData.batchType as "weekday" | "weekend",
         )
-        setFormData((prev) => ({ ...prev, courseId, endDate: calculatedEndDate }))
+        setFormData((prev: any) => ({ ...prev, courseId, endDate: calculatedEndDate }))
       }
     }
   }
@@ -654,14 +824,14 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
         ) : (
           <div>
             <Label htmlFor="status">Status</Label>
-            <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+            <Select value={formData.status} onValueChange={(value: "active" | "completed" | "cancelled") => setFormData({ ...formData, status: value })}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="scheduled">📅 Scheduled</SelectItem>
                 <SelectItem value="active">🟢 Active</SelectItem>
                 <SelectItem value="completed">✅ Completed</SelectItem>
+                <SelectItem value="cancelled">⛔ Cancelled</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -677,9 +847,9 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="scheduled">📅 Scheduled</SelectItem>
               <SelectItem value="active">🟢 Active</SelectItem>
               <SelectItem value="completed">✅ Completed</SelectItem>
+              <SelectItem value="cancelled">⛔ Cancelled</SelectItem>
             </SelectContent>
           </Select>
         </div>

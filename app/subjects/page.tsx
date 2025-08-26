@@ -10,9 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "../../components/ui/label"
 import { Plus, Search, Edit, Clock } from "lucide-react"
 import type { Subject } from "../../hooks/useData"
+import { getSupabaseClient } from "../../lib/supabaseClient"
 
 export default function SubjectsPage() {
-  const { subjects, setSubjects, loading } = useData()
+  const { subjects, courses, setSubjects, loading } = useData()
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null)
@@ -24,10 +25,21 @@ export default function SubjectsPage() {
 
   const filteredSubjects = subjects.filter((subject) => subject.name.toLowerCase().includes(searchTerm.toLowerCase()))
 
-  const handleAddSubject = () => {
+  const handleAddSubject = async () => {
+    const supabase = getSupabaseClient()
+    const insertPayload = {
+      subject_name: formData.name,
+      duration_days: formData.duration,
+    }
+    const { data, error } = await supabase.from("subjects").insert(insertPayload).select("*").single()
+    if (error) {
+      console.error("Failed to add subject:", error)
+      return
+    }
     const newSubject: Subject = {
-      id: `s${subjects.length + 1}`,
-      ...formData,
+      id: String(data.subject_id ?? data.id),
+      name: data.subject_name ?? formData.name,
+      duration: Number(data.duration_days ?? formData.duration),
     }
     setSubjects([...subjects, newSubject])
     setIsAddDialogOpen(false)
@@ -42,8 +54,19 @@ export default function SubjectsPage() {
     })
   }
 
-  const handleUpdateSubject = () => {
+  const handleUpdateSubject = async () => {
     if (!editingSubject) return
+    const supabase = getSupabaseClient()
+    const payload = {
+      subject_name: formData.name,
+      duration_days: formData.duration,
+    }
+    const subjectIdNum = Number.parseInt(editingSubject.id)
+    const { error } = await supabase.from("subjects").update(payload).eq("subject_id", subjectIdNum)
+    if (error) {
+      console.error("Failed to update subject:", error)
+      return
+    }
     const updatedSubjects = subjects.map((subject) =>
       subject.id === editingSubject.id ? { ...subject, ...formData } : subject,
     )
@@ -145,6 +168,22 @@ export default function SubjectsPage() {
                     />
                   </DialogContent>
                 </Dialog>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    const supabase = getSupabaseClient()
+                    const idNum = Number.parseInt(subject.id)
+                    const { error } = await supabase.from("subjects").delete().eq("subject_id", idNum)
+                    if (error) {
+                      console.error("Failed to delete subject:", error)
+                      return
+                    }
+                    setSubjects(subjects.filter((s) => s.id !== subject.id))
+                  }}
+                >
+                  Delete
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -196,7 +235,7 @@ function SubjectForm({ formData, setFormData, onSubmit, onCancel, isEditing }: S
         <Button variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-                        <Button onClick={onSubmit} className="bg-primary-gradient hover:opacity-90">
+        <Button onClick={onSubmit} className="bg-primary-gradient hover:opacity-90">
           {isEditing ? "Update" : "Add"} Subject
         </Button>
       </div>

@@ -14,12 +14,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "../../components/ui/checkbox"
 import { Plus, Search, Edit, MapPin, Clock, BookOpen } from "lucide-react"
 import type { Trainer } from "../../hooks/useData"
+import { getSupabaseClient } from "../../lib/supabaseClient"
 
 export default function TrainersPage() {
   const { trainers, subjects, setTrainers, loading } = useData()
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingTrainer, setEditingTrainer] = useState<Trainer | null>(null)
+
+  const defaultAvailability = {
+    monday: { start: "09:00", end: "17:00" },
+    tuesday: { start: "09:00", end: "17:00" },
+    wednesday: { start: "09:00", end: "17:00" },
+    thursday: { start: "09:00", end: "17:00" },
+    friday: { start: "09:00", end: "17:00" },
+  } as const
 
   const [formData, setFormData] = useState({
     name: "",
@@ -43,11 +52,50 @@ export default function TrainersPage() {
       trainer.expertise.some((exp) => exp.toLowerCase().includes(searchTerm.toLowerCase())),
   )
 
-  const handleAddTrainer = () => {
+  const handleAddTrainer = async () => {
+    const supabase = getSupabaseClient()
+    const primaryLocation = formData.locations[0] ?? ""
+    const priorityLevel = formData.priority === "Senior" ? 1 : formData.priority === "Core" ? 2 : 3
+    const insertPayload = {
+      name: formData.name,
+      email: formData.email,
+      location: primaryLocation,
+      priority_level: priorityLevel,
+      status: "active",
+    }
+    const { data, error } = await supabase.from("trainers").insert(insertPayload).select("*").single()
+    if (error) {
+      console.error("Failed to add trainer:", error)
+      return
+    }
+
+    // Insert trainer_subjects based on selected expertise (names -> subject ids)
+    const subjectNameToId = new Map(subjects.map((s) => [s.name, s.id]))
+    const tsRows = formData.expertise
+      .map((name: string) => subjectNameToId.get(name))
+      .filter(Boolean)
+      .map((subjectId: any) => ({
+        trainer_id: Number(data.trainer_id ?? data.id),
+        subject_id: Number(subjectId),
+        experience_years: 2,
+        proficiency_level: "expert",
+      }))
+    if (tsRows.length > 0) {
+      const { error: tsError } = await supabase.from("trainer_subjects").insert(tsRows)
+      if (tsError) console.error("trainer_subjects insert failed:", tsError)
+    }
+
     const newTrainer: Trainer = {
-      id: `t${trainers.length + 1}`,
-      ...formData,
+      id: String(data.trainer_id ?? data.id),
+      name: data.name,
+      email: data.email ?? "",
+      locations: formData.locations,
+      expertise: formData.expertise,
+      priority: formData.priority,
+      timeSlots: formData.timeSlots,
+      availability: formData.availability,
       leaves: [],
+      status: "active",
     }
     setTrainers([...trainers, newTrainer])
     setIsAddDialogOpen(false)
@@ -63,18 +111,65 @@ export default function TrainersPage() {
       expertise: trainer.expertise,
       priority: trainer.priority,
       timeSlots: trainer.timeSlots || [],
-      availability: trainer.availability,
+      availability: (trainer as any).availability && (trainer as any).availability.monday
+        ? (trainer as any).availability
+        : defaultAvailability,
     })
   }
 
-  const handleUpdateTrainer = () => {
+  const handleUpdateTrainer = async () => {
     if (!editingTrainer) return
+    const supabase = getSupabaseClient()
+    const primaryLocation = formData.locations[0] ?? ""
+    const priorityLevel = formData.priority === "Senior" ? 1 : formData.priority === "Core" ? 2 : 3
+    const payload = {
+      name: formData.name,
+      email: formData.email,
+      location: primaryLocation,
+      priority_level: priorityLevel,
+      status: "active",
+    }
+    const trainerIdNum = Number.parseInt(editingTrainer.id)
+    const { error } = await supabase.from("trainers").update(payload).eq("trainer_id", trainerIdNum)
+    if (error) {
+      console.error("Failed to update trainer:", error)
+    }
+
+    // Sync trainer_subjects: delete then insert new
+    await supabase.from("trainer_subjects").delete().eq("trainer_id", trainerIdNum)
+    const subjectNameToId = new Map(subjects.map((s) => [s.name, s.id]))
+    const tsRows = formData.expertise
+      .map((name: string) => subjectNameToId.get(name))
+      .filter(Boolean)
+      .map((subjectId: any) => ({
+        trainer_id: trainerIdNum,
+        subject_id: Number(subjectId),
+        experience_years: 2,
+        proficiency_level: "expert",
+      }))
+    if (tsRows.length > 0) {
+      const { error: tsError } = await supabase.from("trainer_subjects").insert(tsRows)
+      if (tsError) console.error("trainer_subjects update failed:", tsError)
+    }
+
     const updatedTrainers = trainers.map((trainer) =>
       trainer.id === editingTrainer.id ? { ...trainer, ...formData } : trainer,
     )
     setTrainers(updatedTrainers)
     setEditingTrainer(null)
     resetForm()
+  }
+
+  const handleDeleteTrainer = async (trainerId: string) => {
+    const supabase = getSupabaseClient()
+    const idNum = Number.parseInt(trainerId)
+    await supabase.from("trainer_subjects").delete().eq("trainer_id", idNum)
+    const { error } = await supabase.from("trainers").delete().eq("trainer_id", idNum)
+    if (error) {
+      console.error("Failed to delete trainer:", error)
+      return
+    }
+    setTrainers(trainers.filter((t) => t.id !== trainerId))
   }
 
   const resetForm = () => {
@@ -184,6 +279,9 @@ export default function TrainersPage() {
                       />
                     </DialogContent>
                   </Dialog>
+                  <Button variant="outline" size="sm" onClick={() => handleDeleteTrainer(trainer.id)}>
+                    Delete
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -236,7 +334,7 @@ export default function TrainersPage() {
               <div className="flex items-center space-x-2">
                 <Clock className="w-4 h-4 text-gray-400" />
                 <span className="text-sm text-muted-foreground">
-                  {trainer.availability.monday.start} - {trainer.availability.monday.end}
+                  {((trainer as any).availability?.monday?.start ?? "09:00")} - {((trainer as any).availability?.monday?.end ?? "17:00")}
                 </span>
               </div>
 

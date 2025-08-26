@@ -336,25 +336,51 @@ export function detectConflicts(schedule: ScheduleSession[], trainers: Trainer[]
 }
 
 export function optimizeSchedule(schedule: ScheduleSession[], trainers: Trainer[]): ScheduleSession[] {
-  // Simple optimization: try to balance workload across trainers
+  // Balance: assign unassigned sessions to the least-loaded eligible trainer
   const trainerWorkload = new Map<string, number>()
-
-  // Count current assignments
-  schedule.forEach((session) => {
-    if (session.trainerId) {
-      trainerWorkload.set(session.trainerId, (trainerWorkload.get(session.trainerId) || 0) + 1)
+  trainers.forEach((t) => trainerWorkload.set(t.id, 0))
+  schedule.forEach((s) => {
+    if (s.trainerId) {
+      trainerWorkload.set(s.trainerId, (trainerWorkload.get(s.trainerId) || 0) + 1)
     }
   })
 
-  // Sort trainers by current workload (ascending)
-  const sortedTrainers = trainers
-    .map((trainer) => ({
-      trainer,
-      workload: trainerWorkload.get(trainer.id) || 0,
-    }))
-    .sort((a, b) => a.workload - b.workload)
+  const balanced: ScheduleSession[] = []
+  for (const session of schedule) {
+    if (session.trainerId) {
+      balanced.push(session)
+      continue
+    }
 
-  return schedule // For now, return as-is. Could implement more sophisticated optimization
+    // Build eligibility similar to findAvailableTrainer
+    const dateObj = parseDate(session.date)
+    const dayOfWeek = getDayOfWeek(dateObj)
+    const dateStr = session.date
+
+    const eligible = trainers.filter((trainer) => {
+      const hasExpertise = trainer.expertise.some((exp) => exp.toLowerCase().includes(session.subjectId.toLowerCase()))
+      const hasAvailability = Boolean((trainer as any).availability?.[dayOfWeek])
+      const notOnLeave = !trainer.leaves.some((leave) => {
+        const leaveStart = parseDate(leave.startDate)
+        const leaveEnd = parseDate(leave.endDate)
+        return dateObj >= leaveStart && dateObj <= leaveEnd && leave.status === "approved"
+      })
+      const notDoubleBooked = !balanced.some((s) => s.date === dateStr && s.trainerId === trainer.id)
+      return hasExpertise && hasAvailability && notOnLeave && notDoubleBooked
+    })
+
+    if (eligible.length === 0) {
+      balanced.push(session)
+      continue
+    }
+
+    eligible.sort((a, b) => (trainerWorkload.get(a.id) || 0) - (trainerWorkload.get(b.id) || 0))
+    const chosen = eligible[0]
+    trainerWorkload.set(chosen.id, (trainerWorkload.get(chosen.id) || 0) + 1)
+    balanced.push({ ...session, trainerId: chosen.id, status: "assigned" })
+  }
+
+  return balanced
 }
 
 export function calculateBatchEndDate(

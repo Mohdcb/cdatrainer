@@ -13,6 +13,7 @@ import { Textarea } from "../../components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs"
 import { Plus, Search, Calendar, Clock, User, CheckCircle, XCircle } from "lucide-react"
+import { getSupabaseClient } from "../../lib/supabaseClient"
 import type { Trainer, Holiday } from "../../hooks/useData"
 
 interface LeaveRequest {
@@ -85,14 +86,21 @@ export default function LeavesPage() {
 
   const filteredHolidays = holidays.filter((holiday) => holiday.name.toLowerCase().includes(searchTerm.toLowerCase()))
 
-  const handleSubmitLeaveRequest = () => {
-    const newRequest: LeaveRequest = {
-      id: `lr${leaveRequests.length + 1}`,
-      ...leaveFormData,
+  const handleSubmitLeaveRequest = async () => {
+    const supabase = getSupabaseClient()
+    const trainerIdNum = Number.parseInt(leaveFormData.trainerId)
+    const insertPayload = {
+      trainer_id: trainerIdNum,
+      leave_date: leaveFormData.startDate, // simplifying: single-day leave
+      leave_type: "full_day",
+      reason: leaveFormData.reason,
       status: "pending",
-      requestDate: new Date().toISOString().split("T")[0],
     }
-    setLeaveRequests([...leaveRequests, newRequest])
+    const { data, error } = await supabase.from("trainer_leaves").insert(insertPayload).select("*").single()
+    if (error) {
+      console.error("Failed to submit leave:", error)
+      return
+    }
     setIsLeaveDialogOpen(false)
     resetLeaveForm()
   }
@@ -134,14 +142,29 @@ export default function LeavesPage() {
     )
   }
 
-  const handleAddHoliday = () => {
-    const newHoliday: Holiday = holidayFormData
-    setHolidays([...holidays, newHoliday])
+  const handleAddHoliday = async () => {
+    const supabase = getSupabaseClient()
+    const payload = {
+      holiday_date: holidayFormData.date,
+      holiday_name: holidayFormData.name,
+    }
+    const { error } = await supabase.from("holidays").insert(payload)
+    if (error) {
+      console.error("Failed to add holiday:", error)
+      return
+    }
+    setHolidays([...holidays, { date: holidayFormData.date, name: holidayFormData.name }])
     setIsHolidayDialogOpen(false)
     resetHolidayForm()
   }
 
-  const handleDeleteHoliday = (date: string) => {
+  const handleDeleteHoliday = async (date: string) => {
+    const supabase = getSupabaseClient()
+    const { error } = await supabase.from("holidays").delete().eq("holiday_date", date)
+    if (error) {
+      console.error("Failed to delete holiday:", error)
+      return
+    }
     setHolidays(holidays.filter((holiday) => holiday.date !== date))
   }
 
