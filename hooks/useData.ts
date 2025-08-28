@@ -11,8 +11,17 @@ export interface Trainer {
   expertise: string[]
   priority: "Senior" | "Core" | "Junior"
   timeSlots: string[] // Added time slots for trainers
+  startTime: string // Daily start time (HH:MM format)
+  endTime: string // Daily end time (HH:MM format)
   availability: {
-    [key: string]: boolean // Simplified to boolean for each day
+    monday: boolean
+    tuesday: boolean
+    wednesday: boolean
+    thursday: boolean
+    friday: boolean
+    saturday: boolean
+    sunday: boolean
+    [key: string]: boolean // Allow string indexing
   }
   leaves: Array<{
     startDate: string
@@ -42,12 +51,14 @@ export interface Batch {
   name: string
   courseId: string
   location: string
-  timeSlot?: string
+  timeSlot?: string // Legacy field, will be removed
+  startTime?: string // New: Daily start time (HH:MM format)
+  endTime?: string // New: Daily end time (HH:MM format)
   batchType?: "weekday" | "weekend"
   startDate: string
   endDate: string
   status: "active" | "completed" | "cancelled" | "scheduled" | "draft"
-  maxStudents: number
+  maxStudents?: number // Made optional, default to 20
   currentStudents: number
   generatedSchedule: Array<{
     date: string
@@ -185,11 +196,13 @@ export function useData() {
             courseId: courseId ? String(courseId) : "",
             location: row.location ?? "",
             timeSlot: row.time_slot ?? undefined,
-            batchType: row.batch_type ?? undefined,
+            startTime: row.start_time ? String(row.start_time).substring(0, 5) : "09:00",
+            endTime: row.end_time ? String(row.end_time).substring(0, 5) : "17:00",
+            batchType: (row.batch_type ?? "weekday") as "weekday" | "weekend",
             startDate: row.start_date ?? row.startDate ?? "",
             endDate: row.end_date ?? row.endDate ?? "",
             status: (row.status ?? "active") as Batch["status"],
-            maxStudents: row.max_students ?? row.maxStudents ?? 0,
+            maxStudents: row.max_students ?? row.maxStudents ?? 20,
             currentStudents: row.current_students ?? row.currentStudents ?? 0,
             generatedSchedule: [],
             subjectAssignments: [],
@@ -237,7 +250,30 @@ export function useData() {
             expertise: trainerIdToExpertise.get(String(t.trainer_id ?? t.id)) ?? [],
             priority,
             timeSlots: [],
-            availability: {},
+            startTime: t.start_time ? String(t.start_time).substring(0, 5) : "09:00",
+            endTime: t.end_time ? String(t.end_time).substring(0, 5) : "17:00",
+            availability: (() => {
+              try {
+                if (t.availability && typeof t.availability === 'string') {
+                  return JSON.parse(t.availability)
+                }
+                if (t.availability && typeof t.availability === 'object') {
+                  return t.availability
+                }
+              } catch (e) {
+                console.warn(`Failed to parse availability for trainer ${t.name}:`, e)
+              }
+              // Default availability
+              return {
+                monday: true,
+                tuesday: true,
+                wednesday: true,
+                thursday: true,
+                friday: true,
+                saturday: true,
+                sunday: false
+              }
+            })(),
             leaves: trainerIdToLeaves.get(String(t.trainer_id ?? t.id)) ?? [],
             status: (t.status ?? "active") as "active" | "inactive",
           }

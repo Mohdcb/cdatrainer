@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useData } from "../../hooks/useData"
 import { MainLayout } from "../../components/layout/main-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card"
@@ -20,7 +20,23 @@ export default function TrainersPage() {
   const { trainers, subjects, setTrainers, loading } = useData()
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingTrainer, setEditingTrainer] = useState<Trainer | null>(null)
+  const [successMessage, setSuccessMessage] = useState("")
+  const [showSuccess, setShowSuccess] = useState(false)
+
+  // Ensure form data is properly initialized
+  useEffect(() => {
+    if (!editingTrainer && !isAddDialogOpen && !isEditDialogOpen) {
+      resetForm()
+    }
+  }, [editingTrainer, isAddDialogOpen, isEditDialogOpen])
+
+  const showSuccessMessage = (message: string) => {
+    setSuccessMessage(message)
+    setShowSuccess(true)
+    setTimeout(() => setShowSuccess(false), 3000)
+  }
 
   const defaultAvailability = {
     monday: { start: "09:00", end: "17:00" },
@@ -37,6 +53,8 @@ export default function TrainersPage() {
     expertise: [] as string[],
     priority: "Junior" as "Senior" | "Core" | "Junior",
     timeSlots: [] as string[],
+    startTime: "09:00",
+    endTime: "17:00",
     availability: {
       monday: { start: "09:00", end: "17:00" },
       tuesday: { start: "09:00", end: "17:00" },
@@ -62,6 +80,8 @@ export default function TrainersPage() {
       location: primaryLocation,
       priority_level: priorityLevel,
       status: "active",
+      start_time: formData.startTime,
+      end_time: formData.endTime,
     }
     const { data, error } = await supabase.from("trainers").insert(insertPayload).select("*").single()
     if (error) {
@@ -93,11 +113,16 @@ export default function TrainersPage() {
       expertise: formData.expertise,
       priority: formData.priority,
       timeSlots: formData.timeSlots,
+      startTime: formData.startTime,
+      endTime: formData.endTime,
       availability: formData.availability,
       leaves: [],
       status: "active",
     }
     setTrainers([...trainers, newTrainer])
+    
+    // Show success message and close dialog
+    showSuccessMessage("Trainer added successfully!")
     setIsAddDialogOpen(false)
     resetForm()
   }
@@ -111,10 +136,13 @@ export default function TrainersPage() {
       expertise: trainer.expertise,
       priority: trainer.priority,
       timeSlots: trainer.timeSlots || [],
+      startTime: trainer.startTime || "09:00",
+      endTime: trainer.endTime || "17:00",
       availability: (trainer as any).availability && (trainer as any).availability.monday
         ? (trainer as any).availability
         : defaultAvailability,
     })
+    setIsEditDialogOpen(true)
   }
 
   const handleUpdateTrainer = async () => {
@@ -128,11 +156,14 @@ export default function TrainersPage() {
       location: primaryLocation,
       priority_level: priorityLevel,
       status: "active",
+      start_time: formData.startTime,
+      end_time: formData.endTime,
     }
     const trainerIdNum = Number.parseInt(editingTrainer.id)
     const { error } = await supabase.from("trainers").update(payload).eq("trainer_id", trainerIdNum)
     if (error) {
       console.error("Failed to update trainer:", error)
+      return
     }
 
     // Sync trainer_subjects: delete then insert new
@@ -153,10 +184,19 @@ export default function TrainersPage() {
     }
 
     const updatedTrainers = trainers.map((trainer) =>
-      trainer.id === editingTrainer.id ? { ...trainer, ...formData } : trainer,
+      trainer.id === editingTrainer.id ? { 
+        ...trainer, 
+        ...formData,
+        startTime: formData.startTime,
+        endTime: formData.endTime
+      } : trainer,
     )
     setTrainers(updatedTrainers)
+    
+    // Show success message and close dialog
+    showSuccessMessage("Trainer updated successfully!")
     setEditingTrainer(null)
+    setIsEditDialogOpen(false)
     resetForm()
   }
 
@@ -169,6 +209,9 @@ export default function TrainersPage() {
       console.error("Failed to delete trainer:", error)
       return
     }
+    
+    // Show success message
+    showSuccessMessage("Trainer deleted successfully!")
     setTrainers(trainers.filter((t) => t.id !== trainerId))
   }
 
@@ -180,6 +223,8 @@ export default function TrainersPage() {
       expertise: [],
       priority: "Junior",
       timeSlots: [],
+      startTime: "09:00",
+      endTime: "17:00",
       availability: {
         monday: { start: "09:00", end: "17:00" },
         tuesday: { start: "09:00", end: "17:00" },
@@ -230,6 +275,22 @@ export default function TrainersPage() {
         </Dialog>
       </div>
 
+      {/* Success Message */}
+      {showSuccess && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-green-800">{successMessage}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search and Filters */}
       <Card className="mb-6">
         <CardContent className="p-4">
@@ -259,7 +320,7 @@ export default function TrainersPage() {
                 </div>
                 <div className="flex items-center space-x-2">
                   <PriorityBadge priority={trainer.priority} />
-                  <Dialog>
+                  <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
                     <DialogTrigger asChild>
                       <Button variant="ghost" size="sm" onClick={() => handleEditTrainer(trainer)}>
                         <Edit className="w-4 h-4" />
@@ -274,7 +335,10 @@ export default function TrainersPage() {
                         setFormData={setFormData}
                         subjects={subjects}
                         onSubmit={handleUpdateTrainer}
-                        onCancel={() => setEditingTrainer(null)}
+                        onCancel={() => {
+                          setEditingTrainer(null)
+                          setIsEditDialogOpen(false)
+                        }}
                         isEditing
                       />
                     </DialogContent>
@@ -330,11 +394,11 @@ export default function TrainersPage() {
                 </div>
               )}
 
-              {/* Availability */}
+              {/* Daily Working Hours */}
               <div className="flex items-center space-x-2">
                 <Clock className="w-4 h-4 text-gray-400" />
                 <span className="text-sm text-muted-foreground">
-                  {((trainer as any).availability?.monday?.start ?? "09:00")} - {((trainer as any).availability?.monday?.end ?? "17:00")}
+                  Daily: {trainer.startTime || "09:00"} - {trainer.endTime || "17:00"}
                 </span>
               </div>
 
@@ -419,6 +483,28 @@ function TrainerForm({ formData, setFormData, subjects, onSubmit, onCancel, isEd
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             placeholder="trainer@company.com"
+          />
+        </div>
+      </div>
+
+      {/* Daily Working Hours */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="startTime">Daily Start Time</Label>
+          <Input
+            id="startTime"
+            type="time"
+            value={formData.startTime || "09:00"}
+            onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+          />
+        </div>
+        <div>
+          <Label htmlFor="endTime">Daily End Time</Label>
+          <Input
+            id="endTime"
+            type="time"
+            value={formData.endTime || "17:00"}
+            onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
           />
         </div>
       </div>

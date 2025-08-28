@@ -146,7 +146,7 @@ export default function SubjectsPage() {
                   <CardTitle className="text-lg">{subject.name}</CardTitle>
                   <div className="flex items-center mt-2 text-sm text-muted-foreground">
                     <Clock className="w-4 h-4 mr-1" />
-                    {subject.duration} week{subject.duration !== 1 ? "s" : ""}
+                    {subject.duration} day{subject.duration !== 1 ? "s" : ""}
                   </div>
                 </div>
                 <Dialog>
@@ -189,7 +189,7 @@ export default function SubjectsPage() {
             <CardContent>
               <div className="text-center p-4 bg-gray-50 rounded-lg">
                 <div className="text-2xl font-bold text-primary">{subject.duration}</div>
-                <div className="text-sm text-muted-foreground">Week Duration</div>
+                <div className="text-sm text-muted-foreground">Day Duration</div>
               </div>
             </CardContent>
           </Card>
@@ -221,14 +221,19 @@ function SubjectForm({ formData, setFormData, onSubmit, onCancel, isEditing }: S
       </div>
 
       <div>
-        <Label htmlFor="duration">Duration (weeks)</Label>
+        <Label htmlFor="duration">Duration (days)</Label>
         <Input
           id="duration"
           type="number"
+          min="1"
+          max="365"
           value={formData.duration}
-          onChange={(e) => setFormData({ ...formData, duration: Number.parseInt(e.target.value) || 0 })}
-          placeholder="2"
+          onChange={(e) => setFormData({ ...formData, duration: Math.max(1, Number.parseInt(e.target.value) || 1) })}
+          placeholder="5"
         />
+        <p className="text-xs text-muted-foreground mt-1">
+          Duration in working days for this subject
+        </p>
       </div>
 
       <div className="flex justify-end space-x-2">

@@ -27,11 +27,11 @@ export default function BatchesPage() {
     name: "",
     courseId: "",
     location: "",
-    timeSlot: "",
-    batchType: "weekday" as "weekday" | "weekend", // Added batch type for weekend/weekday
+    startTime: "09:00",
+    endTime: "17:00",
+    batchType: "weekday" as "weekday" | "weekend",
     startDate: "",
     endDate: "",
-    maxStudents: 20,
     currentStudents: 0,
     status: "active" as "active" | "completed" | "cancelled",
   })
@@ -52,6 +52,9 @@ export default function BatchesPage() {
       batch_name: formData.name,
       course_id: courseIdNum,
       location: formData.location,
+      batch_type: formData.batchType,
+      start_time: formData.startTime,
+      end_time: formData.endTime,
       status: statusSafe,
       start_date: formData.startDate,
       end_date: calculatedEndDate,
@@ -70,11 +73,11 @@ export default function BatchesPage() {
       courseId: String(inserted.course_id),
       location: inserted.location,
       timeSlot: undefined,
-      batchType: undefined,
+      batchType: formData.batchType,
       startDate: inserted.start_date,
       endDate: inserted.end_date,
       status: inserted.status,
-      maxStudents: formData.maxStudents,
+      maxStudents: 20, // Default value
       currentStudents: inserted.current_students ?? 0,
       generatedSchedule: [],
       subjectAssignments: [],
@@ -117,11 +120,11 @@ export default function BatchesPage() {
       name: batch.name,
       courseId: batch.courseId,
       location: batch.location,
-      timeSlot: batch.timeSlot || "", // Include time slot in edit
-      batchType: (batch.batchType as "weekday" | "weekend") || "weekday", // Include batch type in edit
+      startTime: "09:00", // Default start time
+      endTime: "17:00", // Default end time
+      batchType: (batch.batchType as "weekday" | "weekend") || "weekday",
       startDate: batch.startDate,
       endDate: batch.endDate,
-      maxStudents: batch.maxStudents,
       currentStudents: batch.currentStudents,
       status: (batch.status as "active" | "completed" | "cancelled") || "active",
     })
@@ -137,6 +140,9 @@ export default function BatchesPage() {
       batch_name: formData.name,
       course_id: courseIdNum,
       location: formData.location,
+      batch_type: formData.batchType,
+      start_time: formData.startTime,
+      end_time: formData.endTime,
       status: statusSafe,
       start_date: formData.startDate,
       end_date: formData.endDate,
@@ -163,11 +169,11 @@ export default function BatchesPage() {
             name: formData.name,
             courseId: formData.courseId,
             location: formData.location,
-            timeSlot: formData.timeSlot || undefined,
+            timeSlot: undefined, // Not used anymore
             batchType: formData.batchType,
             startDate: formData.startDate,
             endDate: formData.endDate,
-            maxStudents: formData.maxStudents,
+            maxStudents: 20, // Default value
             currentStudents: formData.currentStudents,
             status: formData.status,
           }
@@ -194,13 +200,53 @@ export default function BatchesPage() {
   }
 
   const handleGenerateSchedule = async (batch: Batch) => {
+    console.log(`[BATCH] Starting schedule generation for batch: ${batch.name}`)
+    console.log(`[BATCH] Batch details:`, { 
+      id: batch.id, 
+      location: batch.location, 
+      batchType: batch.batchType, 
+      timeSlot: batch.timeSlot 
+    })
+    
     const course = courses.find((c) => c.id === batch.courseId)
-    if (!course) return
+    if (!course) {
+      console.error(`[BATCH] Course not found for batch ${batch.name}`)
+      return
+    }
+    
+    console.log(`[BATCH] Course: ${course.name} with ${course.subjects.length} subjects`)
+    console.log(`[BATCH] Batch working days: ${batch.batchType || 'weekday (default)'}`)
+    console.log(`[BATCH] Available trainers: ${trainers.length}`)
+    console.log(`[BATCH] Trainer details:`, trainers.map(t => ({
+      id: t.id,
+      name: t.name,
+      expertise: t.expertise,
+      locations: t.locations,
+      priority: t.priority,
+      startTime: t.startTime,
+      endTime: t.endTime,
+      availability: t.availability
+    })))
+    console.log(`[BATCH] Available subjects: ${subjects.length}`)
+    console.log(`[BATCH] Subject details:`, subjects.map(s => ({
+      id: s.id,
+      name: s.name,
+      duration: s.duration
+    })))
+    console.log(`[BATCH] Holidays: ${holidays.length}`)
 
-    const schedule = optimizeSchedule(
-      generateSchedule(batch, course, subjects, trainers, holidays),
-      trainers,
-    )
+    // Generate initial schedule
+    const initialSchedule = generateSchedule(batch, course, subjects, trainers, holidays)
+    console.log(`[BATCH] Initial schedule generated: ${initialSchedule.length} sessions`)
+    console.log(`[BATCH] Assigned sessions: ${initialSchedule.filter(s => s.trainerId).length}`)
+    console.log(`[BATCH] Unassigned sessions: ${initialSchedule.filter(s => !s.trainerId).length}`)
+
+    // Optimize schedule to balance workload
+    const schedule = optimizeSchedule(initialSchedule, trainers)
+    console.log(`[BATCH] Optimized schedule: ${schedule.length} sessions`)
+    console.log(`[BATCH] Final assigned sessions: ${schedule.filter(s => s.trainerId).length}`)
+    console.log(`[BATCH] Final unassigned sessions: ${schedule.filter(s => !s.trainerId).length}`)
+
     const updatedBatches = batches.map((b) => (b.id === batch.id ? { ...b, generatedSchedule: schedule } : b))
     setBatches(updatedBatches)
 
@@ -341,11 +387,11 @@ export default function BatchesPage() {
       name: "",
       courseId: "",
       location: "",
-      timeSlot: "", // Reset time slot
-      batchType: "weekday", // Reset batch type
+      startTime: "09:00",
+      endTime: "17:00",
+      batchType: "weekday",
       startDate: "",
       endDate: "",
-      maxStudents: 20,
       currentStudents: 0,
       status: "active",
     })
@@ -668,13 +714,7 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
     { value: "calicut", label: "📍 Calicut", type: "physical" },
   ]
 
-  const timeSlotOptions = [
-    { value: "09:00-12:00", label: "Morning (9:00 AM - 12:00 PM)" },
-    { value: "14:00-17:00", label: "Afternoon (2:00 PM - 5:00 PM)" },
-    { value: "18:00-21:00", label: "Evening (6:00 PM - 9:00 PM)" },
-    { value: "10:00-13:00", label: "Late Morning (10:00 AM - 1:00 PM)" },
-    { value: "15:00-18:00", label: "Late Afternoon (3:00 PM - 6:00 PM)" },
-  ]
+  // Time slot options removed - now using start/end time inputs
 
   const batchTypeOptions = [
     { value: "weekday", label: "📅 Weekday (Mon-Fri)", description: "Monday to Friday classes" },
@@ -742,7 +782,7 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
                 <div className="flex flex-col">
                   <span className="font-medium">{course.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    {course.subjects.length} subjects • {course.duration} weeks
+                    {course.subjects.length} subjects • {course.duration} days
                   </span>
                 </div>
               </SelectItem>
@@ -760,7 +800,8 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
               setFormData({
                 ...formData,
                 location: value,
-                timeSlot: value === "online" ? formData.timeSlot : "",
+                startTime: value === "online" ? formData.startTime : "09:00",
+                endTime: value === "online" ? formData.endTime : "17:00",
                 batchType: value === "online" ? "" : formData.batchType,
               })
             }
@@ -784,42 +825,67 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
         </div>
 
         {isOnlineLocation ? (
-          <div>
-            <Label htmlFor="timeSlot">Time Slot</Label>
-            <Select value={formData.timeSlot} onValueChange={(value) => setFormData({ ...formData, timeSlot: value })}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select time slot" />
-              </SelectTrigger>
-              <SelectContent>
-                {timeSlotOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="startTime">Start Time</Label>
+              <Input
+                id="startTime"
+                type="time"
+                value={formData.startTime}
+                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="endTime">End Time</Label>
+              <Input
+                id="endTime"
+                type="time"
+                value={formData.endTime}
+                onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+              />
+            </div>
           </div>
         ) : isPhysicalLocation ? (
-          <div>
-            <Label htmlFor="batchType">Batch Type</Label>
-            <Select
-              value={formData.batchType}
-              onValueChange={(value) => setFormData({ ...formData, batchType: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select batch type" />
-              </SelectTrigger>
-              <SelectContent>
-                {batchTypeOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    <div className="flex flex-col">
-                      <span>{option.label}</span>
-                      <span className="text-xs text-muted-foreground">{option.description}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="batchType">Batch Type</Label>
+              <Select
+                value={formData.batchType}
+                onValueChange={(value) => setFormData({ ...formData, batchType: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select batch type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {batchTypeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="flex flex-col">
+                        <span>{option.label}</span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="startTime">Start Time</Label>
+              <Input
+                id="startTime"
+                type="time"
+                value={formData.startTime}
+                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="endTime">End Time</Label>
+              <Input
+                id="endTime"
+                type="time"
+                value={formData.endTime}
+                onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+              />
+            </div>
           </div>
         ) : (
           <div>

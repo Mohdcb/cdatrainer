@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useData } from "../../hooks/useData"
 import { MainLayout } from "../../components/layout/main-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card"
@@ -26,6 +26,15 @@ export default function CoursesPage() {
     duration: 0,
     subjects: [] as string[],
   })
+
+  // Auto-calculate course duration when subjects change
+  useEffect(() => {
+    const totalDuration = formData.subjects.reduce((sum, subjectId) => {
+      const s = subjects.find((sub) => sub.id === subjectId)
+      return sum + (s ? Number(s.duration || 0) : 0)
+    }, 0)
+    setFormData(prev => ({ ...prev, duration: totalDuration }))
+  }, [formData.subjects, subjects])
 
   const filteredCourses = courses.filter((course) => course.name.toLowerCase().includes(searchTerm.toLowerCase()))
 
@@ -252,7 +261,7 @@ export default function CoursesPage() {
                       <Clock className="w-4 h-4 text-gray-400" />
                     </div>
                     <div className="text-lg font-semibold">{course.duration}</div>
-                    <div className="text-xs text-muted-foreground">Weeks</div>
+                    <div className="text-xs text-muted-foreground">Days</div>
                   </div>
                   <div className="text-center">
                     <div className="flex items-center justify-center mb-1">
@@ -276,7 +285,7 @@ export default function CoursesPage() {
                   <div className="flex flex-wrap gap-2">
                     {courseSubjects.map((subject) => (
                       <Badge key={subject?.id} variant="secondary" className="text-xs">
-                        {subject?.name} ({subject?.duration}w)
+                        {subject?.name} ({subject?.duration}d)
                       </Badge>
                     ))}
                   </div>
@@ -369,14 +378,19 @@ function CourseForm({ formData, setFormData, subjects, onSubmit, onCancel, isEdi
       </div>
 
       <div>
-        <Label htmlFor="duration">Duration (weeks)</Label>
+        <Label htmlFor="duration">Duration (days)</Label>
         <Input
           id="duration"
           type="number"
+          min="1"
+          max="365"
           value={formData.duration}
-          onChange={(e) => setFormData({ ...formData, duration: Number.parseInt(e.target.value) || 0 })}
-          placeholder="12"
+          disabled
+          className="bg-gray-100 cursor-not-allowed"
         />
+        <p className="text-xs text-muted-foreground mt-1">
+          Total duration in working days (auto-calculated from subjects)
+        </p>
       </div>
 
       <div>
@@ -393,7 +407,7 @@ function CourseForm({ formData, setFormData, subjects, onSubmit, onCancel, isEdi
                   onClick={() => addSubject(subject.id)}
                 >
                   <span className="text-sm">{subject.name}</span>
-                  <Badge variant="outline">{subject.duration}w</Badge>
+                  <Badge variant="outline">{subject.duration}d</Badge>
                 </div>
               ))}
             </div>
@@ -415,7 +429,7 @@ function CourseForm({ formData, setFormData, subjects, onSubmit, onCancel, isEdi
                       <span className="text-sm">{subject?.name}</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Badge variant="outline">{subject?.duration}w</Badge>
+                      <Badge variant="outline">{subject?.duration}d</Badge>
                       <Button
                         variant="ghost"
                         size="sm"
