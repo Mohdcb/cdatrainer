@@ -190,6 +190,27 @@ export function useData() {
         const mappedBatches: Batch[] = (batchesResp.data ?? []).map((row: any) => {
           const id = row.batch_id ?? row.id
           const courseId = row.course_id ?? row.courseId
+          const course = coursesResp.data?.find(c => String(c.course_id ?? c.id) === String(courseId))
+          
+          // Get subjects for this course
+          const courseSubjects = subjectsByCourse.get(String(courseId)) || []
+          
+          // Create subject assignments based on course subjects
+          const subjectAssignments = courseSubjects.map((subjectId) => {
+            const subject = mappedSubjects.find((s) => s.id === subjectId)
+            return {
+              subjectId,
+              subjectName: subject?.name || "Unknown Subject",
+              trainerId: null, // Will be populated from schedules later
+              trainerName: "Unassigned",
+              startDate: "",
+              endDate: "",
+              sessionsCount: 0,
+              status: "unassigned" as const,
+              canChange: true,
+            }
+          })
+          
           return {
             id: String(id),
             name: row.batch_name ?? row.name ?? "",
@@ -205,7 +226,7 @@ export function useData() {
             maxStudents: row.max_students ?? row.maxStudents ?? 20,
             currentStudents: row.current_students ?? row.currentStudents ?? 0,
             generatedSchedule: [],
-            subjectAssignments: [],
+            subjectAssignments,
           }
         })
 
@@ -311,6 +332,42 @@ export function useData() {
           }
         })
         setSchedules(mappedSchedules)
+        
+        // Update batch subjectAssignments with actual trainer data from schedules
+        const updatedBatches = mappedBatches.map(batch => {
+          const batchSchedules = mappedSchedules.filter(s => s.batchId === batch.id)
+          
+          if (batch.subjectAssignments && batch.subjectAssignments.length > 0) {
+            const updatedAssignments = batch.subjectAssignments.map(assignment => {
+              const subjectSessions = batchSchedules.filter(s => s.subjectId === assignment.subjectId)
+              const assignedTrainer = subjectSessions.find(s => s.trainerId)?.trainerId
+              
+              if (subjectSessions.length > 0) {
+                const dates = subjectSessions.map(s => s.date).sort()
+                return {
+                  ...assignment,
+                  trainerId: assignedTrainer || null,
+                  trainerName: assignedTrainer 
+                    ? (mappedTrainers.find(t => t.id === assignedTrainer)?.name || "Unknown")
+                    : "Unassigned",
+                  startDate: dates[0] || "",
+                  endDate: dates[dates.length - 1] || "",
+                  sessionsCount: subjectSessions.length,
+                  status: assignedTrainer ? ("assigned" as const) : ("unassigned" as const),
+                }
+              }
+              return assignment
+            })
+            
+            return {
+              ...batch,
+              subjectAssignments: updatedAssignments
+            }
+          }
+          return batch
+        })
+        
+        setBatches(updatedBatches)
       } catch (error) {
         console.error("Error loading data:", error)
       } finally {

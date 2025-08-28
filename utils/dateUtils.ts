@@ -28,7 +28,9 @@ export function formatDate(date: Date): string {
 }
 
 export function parseDate(dateStr: string): Date {
-  return new Date(dateStr + "T00:00:00")
+  // CRITICAL FIX: Use local timezone to prevent date shifting
+  const [year, month, day] = dateStr.split('-').map(Number)
+  return new Date(year, month - 1, day) // month - 1 because Date constructor uses 0-based months
 }
 
 export function getWeekDays(): string[] {
@@ -38,4 +40,35 @@ export function getWeekDays(): string[] {
 export function getDayOfWeek(date: Date): string {
   const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
   return days[date.getDay()]
+}
+
+/**
+ * FEATURE: Working Day Check for Batch Type
+ * LOGIC: Determines if a specific day should have sessions based on batch type
+ * - Weekday batches: Monday-Friday are working days
+ * - Weekend batches: Saturday-Sunday are working days
+ * - Useful for schedule generation and validation
+ */
+export function isWorkingDayForBatch(date: Date, batchType: "weekday" | "weekend"): boolean {
+  if (batchType === "weekday") {
+    return !isWeekend(date) // Monday-Friday
+  } else if (batchType === "weekend") {
+    return isWeekend(date) // Saturday-Sunday
+  }
+  // Default to weekday behavior
+  return !isWeekend(date)
+}
+
+/**
+ * FEATURE: Get Working Days for Batch Type
+ * LOGIC: Returns array of working day names based on batch type
+ * - Weekday batches: ["monday", "tuesday", "wednesday", "thursday", "friday"]
+ * - Weekend batches: ["saturday", "sunday"]
+ */
+export function getWorkingDaysForBatch(batchType: "weekday" | "weekend"): string[] {
+  if (batchType === "weekend") {
+    return ["saturday", "sunday"]
+  }
+  // Default to weekday
+  return ["monday", "tuesday", "wednesday", "thursday", "friday"]
 }

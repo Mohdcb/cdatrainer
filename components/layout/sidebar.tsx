@@ -7,6 +7,7 @@ import { cn } from "../../lib/utils"
 import { Button } from "../ui/button"
 import {
   Calendar,
+  CalendarDays,
   Users,
   BookOpen,
   GraduationCap,
@@ -22,6 +23,7 @@ import {
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
   { name: "Calendar", href: "/calendar", icon: Calendar },
+  { name: "Calendar 2", href: "/calendar2", icon: CalendarDays },
   { name: "Trainers", href: "/trainers", icon: Users },
   { name: "Courses", href: "/courses", icon: BookOpen },
   { name: "Subjects", href: "/subjects", icon: GraduationCap },

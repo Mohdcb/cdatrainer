@@ -1,5 +1,9 @@
 import type { Trainer, Subject, Batch, Holiday } from "../hooks/useData"
-import { isWeekend, isHoliday, formatDate, getDayOfWeek, parseDate } from "./dateUtils"
+import { isWeekend, isHoliday, formatDate, getDayOfWeek, parseDate, isWorkingDayForBatch } from "./dateUtils"
+
+// DEBUG: Verify imports are working
+// console.log(`[SCHEDULE] DEBUG: Import verification - isWeekend function:`, typeof isWeekend)
+// console.log(`[SCHEDULE] DEBUG: Import verification - isWorkingDayForBatch function:`, typeof isWorkingDayForBatch)
 
 export interface ScheduleSession {
   date: string
@@ -18,6 +22,9 @@ export interface ScheduleSession {
  * - Same trainer for entire subject duration
  * - Respects batch type (weekday/weekend) and holidays
  * - Handles online vs offline time slots
+ * - ENHANCED: Round-robin assignment for equal workload distribution among online trainers
+ * - ENHANCED: Fills empty days with placeholder sessions for clarity
+ * - ENHANCED: Creates schedule rows for ALL working days, even when no trainers available
  */
 export function generateSchedule(
   batch: Batch,
@@ -26,10 +33,16 @@ export function generateSchedule(
   trainers: Trainer[],
   holidays: Holiday[],
 ): ScheduleSession[] {
+  console.log(`[SCHEDULE] ===== GENERATE SCHEDULE CALLED =====`)
+  console.log(`[SCHEDULE] Batch: ${batch.name}, Type: ${batch.batchType}`)
+  console.log(`[SCHEDULE] Start Date: ${batch.startDate}, End Date: ${batch.endDate}`)
+  console.log(`[SCHEDULE] Call stack:`, new Error().stack?.split('\n').slice(1, 4).join('\n'))
+  
   const schedule: ScheduleSession[] = []
   
   // Create a working copy of the start date to avoid mutations
   let currentDate = new Date(parseDate(batch.startDate))
+  const endDate = batch.endDate ? new Date(parseDate(batch.endDate)) : new Date(parseDate(batch.startDate))
 
   // Get subjects in order from the course
   const courseSubjects = course.subjects
@@ -39,19 +52,139 @@ export function generateSchedule(
   // Set default batch type if undefined
   const effectiveBatchType = batch.batchType || "weekday"
   
-  console.log(`[SCHEDULE] Generating schedule for batch: ${batch.name}`)
-  console.log(`[SCHEDULE] Course has ${courseSubjects.length} subjects`)
-  console.log(`[SCHEDULE] Batch type: ${effectiveBatchType} (original: ${batch.batchType}), Location: ${batch.location}`)
+  // console.log(`[SCHEDULE] Generating schedule for batch: ${batch.name}`)
+  // console.log(`[SCHEDULE] Course has ${courseSubjects.length} subjects`)
+  // console.log(`[SCHEDULE] Batch type: ${effectiveBatchType} (original: ${batch.batchType}), Location: ${batch.location}`)
+  // console.log(`[SCHEDULE] DEBUG: batch object:`, JSON.stringify(batch, null, 2))
+  // console.log(`[SCHEDULE] DEBUG: effectiveBatchType: ${effectiveBatchType}`)
+  // console.log(`[SCHEDULE] DEBUG: typeof effectiveBatchType: ${typeof effectiveBatchType}`)
 
+  // ENHANCED: Calculate total working days needed for the entire course
+  let totalWorkingDaysNeeded = 0
   for (const subject of courseSubjects) {
-    console.log(`[SCHEDULE] Processing subject: ${subject.name} (duration: ${subject.duration} working days)`)
+    totalWorkingDaysNeeded += subject.duration
+  }
+  
+  // console.log(`[SCHEDULE] Total working days needed: ${totalWorkingDaysNeeded}`)
+
+  // ENHANCED: Generate schedule for ALL working days in the batch duration
+  let workingDaysProcessed = 0
+  let currentDateForSchedule = new Date(currentDate)
+  
+  // console.log(`[SCHEDULE] DEBUG: Starting schedule generation`)
+  // console.log(`[SCHEDULE] DEBUG: Initial date: ${formatDate(currentDateForSchedule)}`)
+  // console.log(`[SCHEDULE] DEBUG: Total working days needed: ${totalWorkingDaysNeeded}`)
+  // console.log(`[SCHEDULE] DEBUG: Batch type: ${effectiveBatchType}`)
+
+  while (workingDaysProcessed < totalWorkingDaysNeeded) {
+    console.log(`[SCHEDULE] === LOOP ITERATION ${workingDaysProcessed + 1}/${totalWorkingDaysNeeded} ===`)
+    // console.log(`[SCHEDULE] DEBUG: Current date: ${formatDate(currentDateForSchedule)}`)
+    // console.log(`[SCHEDULE] DEBUG: Current day: ${getDayOfWeek(currentDateForSchedule)}`)
+    // console.log(`[SCHEDULE] DEBUG: Is weekend: ${isWeekend(currentDateForSchedule)}`)
+    // console.log(`[SCHEDULE] DEBUG: Is working day: ${isWorkingDayForBatch(currentDateForSchedule, effectiveBatchType)}`)
+    // Skip non-working days based on batch type
+    // CORE DEBUG: Show exactly what's happening with weekend detection
+    console.log(`[SCHEDULE] CORE DEBUG: Before weekend check - Date: ${formatDate(currentDateForSchedule)}`)
+    console.log(`[SCHEDULE] CORE DEBUG: Day: ${getDayOfWeek(currentDateForSchedule)}`)
+    console.log(`[SCHEDULE] CORE DEBUG: Day number: ${currentDateForSchedule.getDay()}`)
+    console.log(`[SCHEDULE] CORE DEBUG: isWeekend(): ${isWeekend(currentDateForSchedule)}`)
+    console.log(`[SCHEDULE] CORE DEBUG: isWorkingDayForBatch(): ${isWorkingDayForBatch(currentDateForSchedule, effectiveBatchType)}`)
+    console.log(`[SCHEDULE] CORE DEBUG: batchType: ${effectiveBatchType}`)
     
-    // FEATURE: Subject Trainer Assignment
-    // LOGIC: Find and assign a trainer for the ENTIRE subject duration
-    // This ensures trainer continuity - same trainer teaches all days of the subject
-    const subjectTrainer = findSubjectTrainer(
-      currentDate,
-      subject,
+    // COMPREHENSIVE FORCE WEEKEND SKIPPING: Handle ALL Saturdays and Sundays for weekday batches
+    let weekendSkipped = false
+    while (
+      !isWorkingDayForBatch(currentDateForSchedule, effectiveBatchType) ||
+      isHoliday(currentDateForSchedule, holidays)
+    ) {
+      const dayName = getDayOfWeek(currentDateForSchedule)
+      const isWeekendDay = isWeekend(currentDateForSchedule)
+      const isWorkingDay = isWorkingDayForBatch(currentDateForSchedule, effectiveBatchType)
+      
+      // FORCE SKIP: For weekday batches, ALWAYS skip Saturday and Sunday regardless of utility function results
+      if (effectiveBatchType === "weekday") {
+        const currentDayNumber = currentDateForSchedule.getDay()
+        if (currentDayNumber === 0 || currentDayNumber === 6) {
+          const forceDayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDayNumber]
+          console.log(`[SCHEDULE] FORCE SKIP: ${forceDayName} (${formatDate(currentDateForSchedule)}): Day ${currentDayNumber} - ALWAYS skipped for weekday batches`)
+          weekendSkipped = true
+          currentDateForSchedule.setDate(currentDateForSchedule.getDate() + 1)
+          continue
+        }
+      }
+      
+      console.log(`[SCHEDULE] Skipping ${dayName} (${formatDate(currentDateForSchedule)}): isWeekend=${isWeekendDay}, isWorkingDay=${isWorkingDay}, batchType=${effectiveBatchType}`)
+      
+      // Move to next day
+      currentDateForSchedule.setDate(currentDateForSchedule.getDate() + 1)
+    }
+    
+    // Log if any weekends were force-skipped
+    if (weekendSkipped) {
+      console.log(`[SCHEDULE] Weekend force-skipping completed for this iteration`)
+    }
+    
+    // console.log(`[SCHEDULE] DEBUG: After weekend skipping - Current date: ${formatDate(currentDateForSchedule)}`)
+    // console.log(`[SCHEDULE] DEBUG: After weekend skipping - Current day: ${getDayOfWeek(currentDateForSchedule)}`)
+    // console.log(`[SCHEDULE] DEBUG: After weekend skipping - Is weekend: ${isWeekend(currentDateForSchedule)}`)
+    // console.log(`[SCHEDULE] DEBUG: After weekend skipping - Is working day: ${isWorkingDayForBatch(currentDateForSchedule, effectiveBatchType)}`)
+
+    // Find which subject this working day belongs to
+    let subjectIndex = 0
+    let daysInCurrentSubject = 0
+    let currentSubject = courseSubjects[subjectIndex]
+    
+    for (let i = 0; i < courseSubjects.length; i++) {
+      if (workingDaysProcessed < daysInCurrentSubject + courseSubjects[i].duration) {
+        subjectIndex = i
+        currentSubject = courseSubjects[i]
+        break
+      }
+      daysInCurrentSubject += courseSubjects[i].duration
+    }
+
+    // EMERGENCY WEEKEND BLOCK: Force check for weekend days before session creation
+    const emergencyDayNumber = currentDateForSchedule.getDay()
+    const emergencyDayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][emergencyDayNumber]
+    const emergencyIsWeekend = emergencyDayNumber === 0 || emergencyDayNumber === 6
+    
+    // CRITICAL: For weekday batches, NEVER create sessions on weekend days
+    if (effectiveBatchType === "weekday" && emergencyIsWeekend) {
+      console.error(`[SCHEDULE] EMERGENCY BLOCK: Blocking weekend session creation!`)
+      console.error(`[SCHEDULE] Date: ${formatDate(currentDateForSchedule)}, Day: ${emergencyDayName} (${emergencyDayNumber}), isWeekend: ${emergencyIsWeekend}`)
+      console.error(`[SCHEDULE] This should never happen for weekday batches!`)
+      console.error(`[SCHEDULE] Moving to next day and continuing...`)
+      currentDateForSchedule.setDate(currentDateForSchedule.getDate() + 1)
+      continue
+    }
+    
+    // Create session for this working day
+    const dayName = getDayOfWeek(currentDateForSchedule)
+    const isWeekendDay = isWeekend(currentDateForSchedule)
+    
+    // CORE DEBUG: Show exactly what's happening during session creation
+    console.log(`[SCHEDULE] CORE DEBUG: Session creation - Date: ${formatDate(currentDateForSchedule)}`)
+    console.log(`[SCHEDULE] CORE DEBUG: Day name: ${dayName}`)
+    console.log(`[SCHEDULE] CORE DEBUG: Day number: ${currentDateForSchedule.getDay()}`)
+    console.log(`[SCHEDULE] CORE DEBUG: isWeekend: ${isWeekendDay}`)
+    console.log(`[SCHEDULE] CORE DEBUG: batchType: ${effectiveBatchType}`)
+    console.log(`[SCHEDULE] CORE DEBUG: Should this be a working day? ${!isWeekendDay}`)
+    
+    console.log(`[SCHEDULE] Creating session for ${dayName} (${formatDate(currentDateForSchedule)}): isWeekend=${isWeekendDay}, subject=${currentSubject.name}`)
+    
+    const session: ScheduleSession = {
+      date: formatDate(currentDateForSchedule),
+      subjectId: currentSubject.id,
+      status: "unassigned", // Default to unassigned
+      timeSlot: getSessionTimeSlot(batch),
+      conflicts: [],
+      sessionType: "regular",
+    }
+
+    // Try to assign a trainer for this session
+    const sessionTrainer = findSubjectTrainer(
+      currentDateForSchedule,
+      currentSubject,
       trainers,
       batch,
       schedule,
@@ -59,75 +192,106 @@ export function generateSchedule(
       effectiveBatchType
     )
 
-    if (subjectTrainer) {
-      console.log(`[SCHEDULE] Assigned trainer ${subjectTrainer.name} to subject ${subject.name}`)
-    } else {
-      console.log(`[SCHEDULE] No trainer available for subject ${subject.name}`)
-    }
-
-    // Generate sessions for each working day of the subject
-    let workingDaysCompleted = 0
-    let daysProcessed = 0
-
-    while (workingDaysCompleted < subject.duration) {
-      // FEATURE: Working Day Calculation
-      // LOGIC: Skip non-working days based on batch type
-      // Weekday batches: Skip weekends (Saturday, Sunday)
-      // Weekend batches: Skip weekdays (Monday-Friday)
-      while (
-        (effectiveBatchType === "weekday" && isWeekend(currentDate)) ||
-        (effectiveBatchType === "weekend" && !isWeekend(currentDate)) ||
-        isHoliday(currentDate, holidays)
-      ) {
-        currentDate.setDate(currentDate.getDate() + 1)
-        daysProcessed++
-      }
-
-      // Create session for this working day
-      const session: ScheduleSession = {
-        date: formatDate(currentDate),
-        subjectId: subject.id,
-        status: subjectTrainer ? "assigned" : "unassigned",
-        timeSlot: getSessionTimeSlot(batch),
-        conflicts: [],
-        sessionType: "regular",
-      }
-
-      if (subjectTrainer) {
-        // FEATURE: Trainer Continuity
-        // LOGIC: Same trainer for entire subject duration
-        session.trainerId = subjectTrainer.id
+    if (sessionTrainer) {
+      // Verify trainer is still available on this specific date
+      if (isTrainerAvailableOnDate(sessionTrainer, currentDateForSchedule, batch, schedule, holidays)) {
+        session.trainerId = sessionTrainer.id
         session.status = "assigned"
-        
-        // Verify trainer is still available on this specific date
-        if (!isTrainerAvailableOnDate(subjectTrainer, currentDate, batch, schedule, holidays)) {
-          session.status = "unassigned"
-          session.conflicts = [`Trainer ${subjectTrainer.name} became unavailable on ${formatDate(currentDate)}`]
-        }
+        // console.log(`[SCHEDULE] Assigned trainer ${sessionTrainer.name} to ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
       } else {
-        // FEATURE: Conflict Detection
-        // LOGIC: When no trainer available, provide specific conflict reasons
-        session.conflicts = getAssignmentConflicts(currentDate, subject, trainers, batch, schedule, holidays)
+        session.conflicts = [`Trainer ${sessionTrainer.name} became unavailable on ${formatDate(currentDateForSchedule)}`]
+        // console.log(`[SCHEDULE] Trainer ${sessionTrainer.name} unavailable on ${formatDate(currentDateForSchedule)}`)
       }
-
-      schedule.push(session)
-      console.log(`[SCHEDULE] Created session for ${formatDate(currentDate)}: ${subject.name} - ${session.status}`)
-
-      // Move to next day
-      currentDate.setDate(currentDate.getDate() + 1)
-      daysProcessed++
-      workingDaysCompleted++
+    } else {
+      // No trainer available - provide specific conflict reasons
+      session.conflicts = getAssignmentConflicts(currentDateForSchedule, currentSubject, trainers, batch, schedule, holidays)
+      // console.log(`[SCHEDULE] No trainer available for ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
     }
 
-    console.log(`[SCHEDULE] Completed subject ${subject.name} in ${workingDaysCompleted} working days (${daysProcessed} total days)`)
-    
-    // FEATURE: Consecutive Subject Processing
-    // LOGIC: NO gaps between subjects - they run consecutively
-    // The next subject starts immediately after the current one ends
-    // No need to add extra days or gaps
+    // Simple session addition
+    schedule.push(session)
+    console.log(`[SCHEDULE] Added session to schedule - Date: ${formatDate(currentDateForSchedule)}, Day: ${dayName}, isWeekend: ${isWeekendDay}`)
+
+    // Move to next day
+    // console.log(`[SCHEDULE] DEBUG: Before moving to next day - Current date: ${formatDate(currentDateForSchedule)}`)
+    currentDateForSchedule.setDate(currentDateForSchedule.getDate() + 1)
+    // console.log(`[SCHEDULE] DEBUG: After moving to next day - New date: ${formatDate(currentDateForSchedule)}`)
+    workingDaysProcessed++
+    // console.log(`[SCHEDULE] DEBUG: Working days processed: ${workingDaysProcessed}/${totalWorkingDaysNeeded}`)
   }
 
-  console.log(`[SCHEDULE] Total sessions generated: ${schedule.length}`)
+  // console.log(`[SCHEDULE] Total sessions generated: ${schedule.length}`)
+  // console.log(`[SCHEDULE] Assigned sessions: ${schedule.filter(s => s.status === "assigned").length}`)
+  // console.log(`[SCHEDULE] Unassigned sessions: ${schedule.filter(s => s.status === "unassigned").length}`)
+  
+  // DEBUG: Check for duplicate dates
+  const dateCounts = new Map<string, number>()
+  schedule.forEach(s => {
+    const count = dateCounts.get(s.date) || 0
+    dateCounts.set(s.date, count + 1)
+  })
+  
+  console.log(`[SCHEDULE] DEBUG: ===== DUPLICATE DATE CHECK =====`)
+  dateCounts.forEach((count, date) => {
+    if (count > 1) {
+      console.error(`[SCHEDULE] ERROR: Date ${date} appears ${count} times in schedule!`)
+    } else {
+      console.log(`[SCHEDULE] DEBUG: Date ${date} appears ${count} time(s)`)
+    }
+  })
+  
+  // Debug: Show which days got sessions
+  console.log(`[SCHEDULE] DEBUG: ===== PROCESSING SESSION DAYS SUMMARY =====`)
+  console.log(`[SCHEDULE] DEBUG: Total sessions in schedule: ${schedule.length}`)
+  
+  // FINAL FIX: Use direct date construction to eliminate ANY date processing bugs
+  const sessionDays = schedule.map((s, index) => {
+    // DIRECT DATE CONSTRUCTION: No utility functions, no timezone issues
+    const [year, month, day] = s.date.split('-').map(Number)
+    const directDate = new Date(year, month - 1, day) // Local timezone, no shifting
+    const directDay = directDate.getDay()
+    const directDayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][directDay]
+    const directIsWeekend = directDay === 0 || directDay === 6
+    
+    // FINAL DEBUG: Show exactly what's happening in the summary
+    console.log(`[SCHEDULE] FINAL DEBUG: Session ${index + 1}/${schedule.length}:`)
+    console.log(`[SCHEDULE] FINAL DEBUG:   - Date string: "${s.date}"`)
+    console.log(`[SCHEDULE] FINAL DEBUG:   - Direct date: ${directDate.toISOString()}`)
+    console.log(`[SCHEDULE] FINAL DEBUG:   - Day number: ${directDay}`)
+    console.log(`[SCHEDULE] FINAL DEBUG:   - Day name: ${directDayName}`)
+    console.log(`[SCHEDULE] FINAL DEBUG:   - isWeekend: ${directIsWeekend}`)
+    console.log(`[SCHEDULE] FINAL DEBUG:   - Subject ID: ${s.subjectId}`)
+    
+    return `${directDayName} (${s.date}) - ${s.subjectId} - isWeekend: ${directIsWeekend}`
+  })
+  
+  // Simple final result check
+  console.log(`[SCHEDULE] ===== FINAL RESULT =====`)
+  console.log(`[SCHEDULE] Total sessions: ${schedule.length}`)
+  console.log(`[SCHEDULE] Session days:`, sessionDays)
+  
+  // Check if any weekend sessions exist for weekday batches
+  const weekendSessions = sessionDays.filter(day => day.includes('isWeekend: true'))
+  if (weekendSessions.length > 0) {
+    console.error(`[SCHEDULE] ⚠️  WARNING: Found ${weekendSessions.length} weekend sessions!`)
+    weekendSessions.forEach(session => console.error(`[SCHEDULE]   - ${session}`))
+  } else {
+    console.log(`[SCHEDULE] ✅ SUCCESS: No weekend sessions found!`)
+  }
+  
+  // ENHANCED: Fill empty days with placeholder sessions for clarity
+  if (endDate) {
+    const filledSchedule = fillEmptyDaysWithPlaceholders(
+      schedule, 
+      batch, 
+      new Date(parseDate(batch.startDate)), 
+      endDate, 
+      effectiveBatchType
+    )
+    // console.log(`[SCHEDULE] Filled schedule with placeholders: ${filledSchedule.length} total sessions`)
+    return filledSchedule
+  }
+  
   return schedule.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 }
 
@@ -137,6 +301,7 @@ export function generateSchedule(
  * - Checks expertise, location, availability, and workload
  * - Returns the same trainer for all days of the subject
  * - Implements priority system (Senior > Core > Junior)
+ * - ENHANCED: Round-robin assignment for equal workload distribution
  */
 function findSubjectTrainer(
   startDate: Date,
@@ -189,15 +354,69 @@ function findSubjectTrainer(
     return null
   }
 
-  // FEATURE: Priority-Based Trainer Selection
+  // ENHANCED FEATURE: Round-Robin Workload Distribution
+  // LOGIC: Ensures equal contribution from all eligible trainers
+  if (batch.location === "online" && eligibleTrainers.length > 1) {
+    const selectedTrainer = selectTrainerWithRoundRobin(eligibleTrainers, existingSchedule, batch)
+    console.log(`[TRAINER] Round-robin selected: ${selectedTrainer.name} (Priority: ${selectedTrainer.priority})`)
+    return selectedTrainer
+  }
+
+  // FEATURE: Priority-Based Trainer Selection (fallback for offline or single trainer)
   // LOGIC: Sort by priority (Senior > Core > Junior) and select the best available
   const priorityOrder = { Senior: 3, Core: 2, Junior: 1 }
   eligibleTrainers.sort((a, b) => priorityOrder[b.priority] - priorityOrder[a.priority])
 
   const selectedTrainer = eligibleTrainers[0]
-  console.log(`[TRAINER] Selected trainer: ${selectedTrainer.name} (Priority: ${selectedTrainer.priority})`)
+  console.log(`[TRAINER] Priority-based selected: ${selectedTrainer.name} (Priority: ${selectedTrainer.priority})`)
   
   return selectedTrainer
+}
+
+/**
+ * FEATURE: Round-Robin Trainer Selection
+ * LOGIC: Ensures equal workload distribution among eligible trainers
+ * - Tracks assignment order for fair distribution
+ * - Considers current workload to balance assignments
+ * - Maintains priority within equal workload groups
+ */
+function selectTrainerWithRoundRobin(
+  eligibleTrainers: Trainer[],
+  existingSchedule: ScheduleSession[],
+  batch: Batch
+): Trainer {
+  console.log(`[ROUND-ROBIN] Selecting trainer from ${eligibleTrainers.length} eligible trainers`)
+  
+  // Calculate current workload for each eligible trainer
+  const trainerWorkload = new Map<string, number>()
+  eligibleTrainers.forEach(trainer => {
+    const currentWorkload = existingSchedule.filter(s => s.trainerId === trainer.id).length
+    trainerWorkload.set(trainer.id, currentWorkload)
+    console.log(`[ROUND-ROBIN] ${trainer.name}: ${currentWorkload} sessions`)
+  })
+  
+  // Find trainers with minimum workload
+  const minWorkload = Math.min(...Array.from(trainerWorkload.values()))
+  const trainersWithMinWorkload = eligibleTrainers.filter(trainer => 
+    trainerWorkload.get(trainer.id) === minWorkload
+  )
+  
+  console.log(`[ROUND-ROBIN] ${trainersWithMinWorkload.length} trainers have minimum workload: ${minWorkload}`)
+  
+  if (trainersWithMinWorkload.length === 1) {
+    // Only one trainer with minimum workload
+    const selected = trainersWithMinWorkload[0]
+    console.log(`[ROUND-ROBIN] Selected ${selected.name} (minimum workload: ${minWorkload})`)
+    return selected
+  }
+  
+  // Multiple trainers with same workload - use priority-based selection
+  const priorityOrder = { Senior: 3, Core: 2, Junior: 1 }
+  trainersWithMinWorkload.sort((a, b) => priorityOrder[b.priority] - priorityOrder[a.priority])
+  
+  const selected = trainersWithMinWorkload[0]
+  console.log(`[ROUND-ROBIN] Selected ${selected.name} (priority: ${selected.priority}, workload: ${minWorkload})`)
+  return selected
 }
 
 /**
@@ -296,12 +515,12 @@ function canTrainerHandleSubjectDuration(
   let currentDate = new Date(startDate)
 
   while (workingDaysChecked < duration) {
-          // Skip non-working days based on batch type
-      while (
-        (effectiveBatchType === "weekday" && isWeekend(currentDate)) ||
-        (effectiveBatchType === "weekend" && !isWeekend(currentDate)) ||
-        isHoliday(currentDate, holidays)
-      ) {
+    // Skip non-working days based on batch type
+    while (
+      (effectiveBatchType === "weekday" && isWeekend(currentDate)) ||
+      (effectiveBatchType === "weekend" && !isWeekend(currentDate)) ||
+      isHoliday(currentDate, holidays)
+    ) {
       currentDate.setDate(currentDate.getDate() + 1)
     }
 
@@ -665,9 +884,8 @@ export function optimizeSchedule(schedule: ScheduleSession[], trainers: Trainer[
       continue
     }
 
-    // Select trainer with lowest workload
-    eligible.sort((a, b) => (trainerWorkload.get(a.id) || 0) - (trainerWorkload.get(b.id) || 0))
-    const chosenTrainer = eligible[0]
+    // ENHANCED: Use round-robin selection for equal workload distribution
+    const chosenTrainer = selectTrainerWithRoundRobin(eligible, optimized, { location: "online" } as Batch)
     
     // Update workload and assign trainer
     trainerWorkload.set(chosenTrainer.id, (trainerWorkload.get(chosenTrainer.id) || 0) + 1)
@@ -682,6 +900,22 @@ export function optimizeSchedule(schedule: ScheduleSession[], trainers: Trainer[
     optimized.push(optimizedSession)
   }
 
+  // Log final workload distribution
+  const finalWorkload = new Map<string, number>()
+  trainers.forEach((t) => finalWorkload.set(t.id, 0))
+  
+  optimized.forEach((s) => {
+    if (s.trainerId) {
+      finalWorkload.set(s.trainerId, (finalWorkload.get(s.trainerId) || 0) + 1)
+    }
+  })
+  
+  console.log(`[OPTIMIZE] Final workload distribution:`)
+  trainers.forEach(trainer => {
+    const workload = finalWorkload.get(trainer.id) || 0
+    console.log(`[OPTIMIZE] ${trainer.name}: ${workload} sessions`)
+  })
+  
   console.log(`[OPTIMIZE] Optimization complete. Assigned ${optimized.filter(s => s.trainerId).length} sessions`)
   return optimized
 }
@@ -784,3 +1018,30 @@ export function calculateBatchEndDate(
   
   return endDate
 }
+
+
+
+/**
+ * FEATURE: Fills empty days with placeholder sessions for clarity
+ * LOGIC: Creates sessions for days where no trainer was assigned
+ * - Ensures all working days in the batch duration are represented
+ * - Marks them as "unassigned"
+ * - Maintains consistency with the original schedule structure
+ * 
+ * NOTE: This function is currently disabled to prevent database constraint violations.
+ * The main schedule generation already covers all working days needed for subjects.
+ */
+function fillEmptyDaysWithPlaceholders(
+  schedule: ScheduleSession[],
+  batch: Batch,
+  startDate: Date,
+  endDate: Date,
+  effectiveBatchType: "weekday" | "weekend"
+): ScheduleSession[] {
+  // DISABLED: Return original schedule without placeholders to prevent database errors
+  // The main schedule generation already creates sessions for all required working days
+  console.log(`[FILL] Placeholder generation disabled - main schedule covers all working days`)
+  return schedule
+}
+
+

@@ -9,7 +9,7 @@ interface DraggableSessionProps {
   session: ScheduleSession & { batchId: string; batchName: string }
   subject: { name: string } | undefined
   trainer: { name: string } | undefined
-  batch: { name: string } | undefined
+  batch: { name: string; location: string } | undefined
   onDragStart: (session: ScheduleSession & { batchId: string; batchName: string }) => void
   onDragEnd: () => void
 }
@@ -41,8 +41,29 @@ export function DraggableSession({ session, subject, trainer, batch, onDragStart
       }`}
       title={`${subject?.name} - ${batch?.name} - ${trainer?.name || "Unassigned"} (Drag to reschedule)`}
     >
-      {subject?.name}
-      {trainer && <div className="text-xs opacity-75">{trainer.name.split(" ")[0]}</div>}
+      <div className="font-medium truncate">{subject?.name}</div>
+      
+      {/* Show batch name for ALL sessions */}
+      <div className={`text-xs opacity-75 truncate ${
+        batch?.location === "online" ? "text-blue-600" : "text-gray-600"
+      }`}>
+        📍 {batch?.name}
+        {batch?.location !== "online" && <span className="text-xs opacity-50"> (Offline)</span>}
+      </div>
+      
+      {/* Show time slot ONLY for online sessions */}
+      {batch?.location === "online" && session.timeSlot && (
+        <div className="text-xs opacity-75 text-gray-600 truncate">
+          ⏰ {session.timeSlot}
+        </div>
+      )}
+      
+      {/* Show trainer name */}
+      {trainer && (
+        <div className="text-xs opacity-75 truncate">
+          👤 {trainer.name.split(" ")[0]}
+        </div>
+      )}
     </div>
   )
 }

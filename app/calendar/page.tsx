@@ -82,15 +82,20 @@ export default function CalendarPage() {
     if (!batch) return
 
     // Create a temporary schedule with the moved session
-    const tempSchedule = allSessions.map((s) => (s.id === session.id ? { ...s, date: targetDate } : s))
+    const tempSchedule = allSessions.map((s) => (s.batchId === session.batchId && s.subjectId === session.subjectId && s.date === session.date ? { ...s, date: targetDate } : s))
     const conflicts = detectConflicts(tempSchedule, trainers)
-    const sessionConflicts = conflicts.filter((c) => c.sessionId === session.id)
+    
+    // Find conflicts for this specific session
+    const sessionConflicts = conflicts.filter((c) => 
+      c.subjectId === session.subjectId && 
+      c.date === targetDate
+    )
 
-    if (sessionConflicts.length > 0) {
+    if (sessionConflicts.length > 0 && sessionConflicts[0].conflicts && sessionConflicts[0].conflicts.length > 0) {
       setPendingReschedule({
         session,
         newDate: targetDate,
-        conflicts: sessionConflicts.map((c) => c.reason),
+        conflicts: sessionConflicts[0].conflicts,
       })
       setShowConfirmDialog(true)
     } else {
@@ -101,7 +106,11 @@ export default function CalendarPage() {
 
   const performReschedule = (session: ScheduleSession & { batchId: string; batchName: string }, newDate: string) => {
     // Update schedules table entry date
-    const updated = schedules.map((e) => (e.id === session.id ? { ...e, date: newDate } : e))
+    const updated = schedules.map((e) => 
+      e.batchId === session.batchId && e.subjectId === session.subjectId && e.date === session.date 
+        ? { ...e, date: newDate } 
+        : e
+    )
     setSchedules(updated as any)
   }
 
@@ -205,7 +214,10 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Master Calendar</h1>
-          <p className="text-gray-600">View and manage all training schedules • Drag sessions to reschedule</p>
+          <p className="text-gray-600">
+            View and manage all training schedules • Drag sessions to reschedule • 
+            <span className="text-blue-600 font-medium"> All sessions show batch names, online sessions show time slots</span>
+          </p>
         </div>
         <div className="flex items-center space-x-4">
           <Button variant="outline" onClick={navigateToday}>
@@ -275,6 +287,30 @@ export default function CalendarPage() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Calendar Legend */}
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="flex items-center space-x-6 text-sm">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-primary/10 rounded"></div>
+              <span>Assigned Sessions</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-orange-100 rounded"></div>
+              <span>Unassigned Sessions</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-blue-600 rounded"></div>
+              <span>All Batch Names</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-gray-600 rounded"></div>
+              <span>Time Slots (Online Only)</span>
+            </div>
           </div>
         </CardContent>
       </Card>
