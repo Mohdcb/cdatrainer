@@ -281,6 +281,29 @@ export function generateSchedule(
   } else {
     console.log(`[SCHEDULE] ✅ SUCCESS: No weekend sessions found!`)
   }
+
+  // CRITICAL: Check for trainer overlapping sessions
+  console.log(`[SCHEDULE] ===== TRAINER OVERLAP CHECK =====`)
+  const trainerDateMap = new Map<string, Set<string>>() // trainerId -> Set of dates
+  
+  schedule.forEach(session => {
+    if (session.trainerId) {
+      if (!trainerDateMap.has(session.trainerId)) {
+        trainerDateMap.set(session.trainerId, new Set())
+      }
+      const trainerDates = trainerDateMap.get(session.trainerId)!
+      
+      if (trainerDates.has(session.date)) {
+        console.error(`[SCHEDULE] ❌ CRITICAL ERROR: Trainer ${session.trainerId} has OVERLAPPING sessions on ${session.date}!`)
+        console.error(`[SCHEDULE] This should never happen with our new logic!`)
+      } else {
+        trainerDates.add(session.date)
+        console.log(`[SCHEDULE] ✅ Trainer ${session.trainerId} assigned to ${session.date}`)
+      }
+    }
+  })
+  
+  console.log(`[SCHEDULE] Trainer overlap check complete`)
   
   // ENHANCED: Fill empty days with placeholder sessions for clarity
   if (endDate) {
@@ -334,7 +357,17 @@ function findSubjectTrainer(
       return false
     }
 
-    // Step 3: Check if trainer can handle the entire subject duration
+    // Step 3: SIMPLE CHECK - Does trainer already have ANY session on the start date?
+    const startDateStr = formatDate(startDate)
+    const hasSessionOnStartDate = existingSchedule.some(s => 
+      s.date === startDateStr && s.trainerId === trainer.id
+    )
+    if (hasSessionOnStartDate) {
+      console.log(`[TRAINER] BLOCKED: ${trainer.name} already has a session on ${startDateStr}`)
+      return false
+    }
+
+    // Step 4: Check if trainer can handle the entire subject duration
     const canHandleSubject = canTrainerHandleSubjectDuration(
       trainer,
       startDate,
@@ -346,12 +379,6 @@ function findSubjectTrainer(
     )
     if (!canHandleSubject) {
       console.log(`[TRAINER] ${trainer.name} cannot handle entire subject duration`)
-      return false
-    }
-
-    // Step 4: CRITICAL - Check if trainer is available on the specific start date
-    if (!isTrainerAvailableOnDate(trainer, startDate, batch, existingSchedule, holidays)) {
-      console.log(`[TRAINER] ${trainer.name} not available on start date ${formatDate(startDate)}`)
       return false
     }
 
@@ -595,37 +622,18 @@ function isTrainerAvailableOnDate(
     console.log(`[TRAINER] Existing sessions:`, existingSessions.map(s => `${s.subjectId} at ${s.timeSlot}`))
   }
 
-  if (batch.location === "online") {
-    // FEATURE: Online Session Time Slot Management
-    // LOGIC: Multiple online sessions allowed per day if time slots don't overlap
-    
-    // Check if new session can fit within trainer's working hours
-    const canFitInWorkingHours = canFitInTrainerWorkingHours(trainer, batch.timeSlot || "")
-    if (!canFitInWorkingHours) {
-      console.log(`[TRAINER] ${trainer.name} working hours cannot accommodate time slot ${batch.timeSlot}`)
-      return false
-    }
+  // SIMPLE RULE: One trainer = One session per day (regardless of location)
+  if (existingSessions.length > 0) {
+    console.log(`[TRAINER] BLOCKED: ${trainer.name} already has ${existingSessions.length} session(s) on ${dateStr}`)
+    console.log(`[TRAINER] Existing sessions:`, existingSessions.map(s => `${s.subjectId} at ${s.timeSlot}`))
+    return false
+  }
 
-    // Check for time slot conflicts
-    const hasTimeConflict = hasTimeSlotConflict(batch.timeSlot || "", existingSessions)
-    if (hasTimeConflict) {
-      console.log(`[TRAINER] ${trainer.name} has time slot conflict on ${dateStr}`)
-      return false
-    }
-
-    // Limit online sessions per day (configurable)
-    const maxOnlineSessionsPerDay = 3 // Reduced from 4 to prevent overload
-    if (existingSessions.length >= maxOnlineSessionsPerDay) {
-      console.log(`[TRAINER] ${trainer.name} already has ${existingSessions.length} sessions on ${dateStr} (max: ${maxOnlineSessionsPerDay})`)
-      return false
-    }
-  } else {
-    // FEATURE: Offline Session Management
-    // LOGIC: Only one offline session per day per trainer
-    if (existingSessions.length > 0) {
-      console.log(`[TRAINER] ${trainer.name} already has offline session on ${dateStr} - cannot double-book`)
-      return false
-    }
+  // Additional check for working hours
+  const canFitInWorkingHours = canFitInTrainerWorkingHours(trainer, batch.timeSlot || "")
+  if (!canFitInWorkingHours) {
+    console.log(`[TRAINER] ${trainer.name} working hours cannot accommodate time slot ${batch.timeSlot}`)
+    return false
   }
 
   return true
