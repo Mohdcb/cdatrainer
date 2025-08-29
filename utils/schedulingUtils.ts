@@ -93,7 +93,7 @@ export function generateSchedule(
     
     // COMPREHENSIVE FORCE WEEKEND SKIPPING: Handle ALL Saturdays and Sundays for weekday batches
     let weekendSkipped = false
-    while (
+      while (
       !isWorkingDayForBatch(currentDateForSchedule, effectiveBatchType) ||
       isHoliday(currentDateForSchedule, holidays)
     ) {
@@ -156,9 +156,9 @@ export function generateSchedule(
       console.error(`[SCHEDULE] Moving to next day and continuing...`)
       currentDateForSchedule.setDate(currentDateForSchedule.getDate() + 1)
       continue
-    }
-    
-    // Create session for this working day
+      }
+
+      // Create session for this working day
     const dayName = getDayOfWeek(currentDateForSchedule)
     const isWeekendDay = isWeekend(currentDateForSchedule)
     
@@ -172,14 +172,14 @@ export function generateSchedule(
     
     console.log(`[SCHEDULE] Creating session for ${dayName} (${formatDate(currentDateForSchedule)}): isWeekend=${isWeekendDay}, subject=${currentSubject.name}`)
     
-    const session: ScheduleSession = {
+      const session: ScheduleSession = {
       date: formatDate(currentDateForSchedule),
       subjectId: currentSubject.id,
       status: "unassigned", // Default to unassigned
-      timeSlot: getSessionTimeSlot(batch),
-      conflicts: [],
-      sessionType: "regular",
-    }
+        timeSlot: getSessionTimeSlot(batch),
+        conflicts: [],
+        sessionType: "regular",
+      }
 
     // Try to assign a trainer for this session - BUT DON'T FORCE IT
     const sessionTrainer = findSubjectTrainer(
@@ -189,33 +189,34 @@ export function generateSchedule(
       batch,
       schedule,
       holidays,
-      effectiveBatchType
+      effectiveBatchType,
+      subjects
     )
 
     if (sessionTrainer) {
       // CRITICAL: Double-check trainer availability on this specific date
-      if (isTrainerAvailableOnDate(sessionTrainer, currentDateForSchedule, batch, schedule, holidays)) {
+      if (isTrainerAvailableOnDate(sessionTrainer, currentDateForSchedule, batch, schedule, holidays, subjects)) {
         session.trainerId = sessionTrainer.id
         session.status = "assigned"
         console.log(`[SCHEDULE] Successfully assigned trainer ${sessionTrainer.name} to ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
       } else {
         // Trainer became unavailable - keep session unassigned
-        session.status = "unassigned"
+          session.status = "unassigned"
         session.conflicts = [`Trainer ${sessionTrainer.name} became unavailable on ${formatDate(currentDateForSchedule)}`]
         console.log(`[SCHEDULE] Trainer ${sessionTrainer.name} unavailable on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
-      }
-    } else {
+        }
+      } else {
       // No trainer available - keep session unassigned for admin to handle
       session.status = "unassigned"
-      session.conflicts = getAssignmentConflicts(currentDateForSchedule, currentSubject, trainers, batch, schedule, holidays)
+      session.conflicts = getAssignmentConflicts(currentDateForSchedule, currentSubject, trainers, batch, schedule, holidays, subjects)
       console.log(`[SCHEDULE] No trainer available for ${currentSubject.name} on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
     }
 
     // Simple session addition
-    schedule.push(session)
+      schedule.push(session)
     console.log(`[SCHEDULE] Added session to schedule - Date: ${formatDate(currentDateForSchedule)}, Day: ${dayName}, isWeekend: ${isWeekendDay}`)
 
-    // Move to next day
+      // Move to next day
     // console.log(`[SCHEDULE] DEBUG: Before moving to next day - Current date: ${formatDate(currentDateForSchedule)}`)
     currentDateForSchedule.setDate(currentDateForSchedule.getDate() + 1)
     // console.log(`[SCHEDULE] DEBUG: After moving to next day - New date: ${formatDate(currentDateForSchedule)}`)
@@ -395,7 +396,8 @@ function findSubjectTrainer(
   batch: Batch,
   existingSchedule: ScheduleSession[],
   holidays: Holiday[],
-  effectiveBatchType: "weekday" | "weekend"
+  effectiveBatchType: "weekday" | "weekend",
+  subjects: Subject[]
 ): Trainer | null {
   console.log(`[TRAINER] Finding trainer for subject: ${subject.name}`)
   
@@ -455,7 +457,8 @@ function findSubjectTrainer(
       batch,
       existingSchedule,
       holidays,
-      effectiveBatchType
+      effectiveBatchType,
+      subjects
     )
     if (!canHandleSubject) {
       console.log(`[TRAINER] ${trainer.name} cannot handle entire subject duration`)
@@ -623,7 +626,8 @@ function canTrainerHandleSubjectDuration(
   batch: Batch,
   existingSchedule: ScheduleSession[],
   holidays: Holiday[],
-  effectiveBatchType: "weekday" | "weekend"
+  effectiveBatchType: "weekday" | "weekend",
+  subjects: Subject[]
 ): boolean {
   console.log(`[TRAINER] Checking if ${trainer.name} can handle ${duration} working days starting ${formatDate(startDate)}`)
 
@@ -631,17 +635,17 @@ function canTrainerHandleSubjectDuration(
   let currentDate = new Date(startDate)
 
   while (workingDaysChecked < duration) {
-    // Skip non-working days based on batch type
-    while (
-      (effectiveBatchType === "weekday" && isWeekend(currentDate)) ||
-      (effectiveBatchType === "weekend" && !isWeekend(currentDate)) ||
-      isHoliday(currentDate, holidays)
-    ) {
+          // Skip non-working days based on batch type
+      while (
+        (effectiveBatchType === "weekday" && isWeekend(currentDate)) ||
+        (effectiveBatchType === "weekend" && !isWeekend(currentDate)) ||
+        isHoliday(currentDate, holidays)
+      ) {
       currentDate.setDate(currentDate.getDate() + 1)
     }
 
     // CRITICAL: Check if trainer is available on this specific date
-    if (!isTrainerAvailableOnDate(trainer, currentDate, batch, existingSchedule, holidays)) {
+    if (!isTrainerAvailableOnDate(trainer, currentDate, batch, existingSchedule, holidays, subjects)) {
       console.log(`[TRAINER] ${trainer.name} unavailable on ${formatDate(currentDate)} - cannot handle subject duration`)
       return false
     }
@@ -667,7 +671,8 @@ function isTrainerAvailableOnDate(
   date: Date,
   batch: Batch,
   existingSchedule: ScheduleSession[],
-  holidays: Holiday[]
+  holidays: Holiday[],
+  subjects: Subject[]
 ): boolean {
   const dayOfWeek = getDayOfWeek(date)
   const dateStr = formatDate(date)
@@ -709,11 +714,41 @@ function isTrainerAvailableOnDate(
     return false
   }
 
+  // ENHANCED: Check for date range overlaps with existing subject assignments
+  // This prevents trainers from being assigned to overlapping subject periods
+  const hasDateRangeOverlap = existingSchedule.some(s => {
+    if (s.trainerId !== trainer.id) return false
+    
+    // Find the subject for this existing session to get its duration
+    const existingSubject = subjects.find(sub => sub.id === s.subjectId)
+    if (!existingSubject) return false
+    
+    // Calculate the date range for the existing subject
+    const existingStartDate = new Date(s.date)
+    const existingEndDate = new Date(existingStartDate)
+    existingEndDate.setDate(existingStartDate.getDate() + existingSubject.duration - 1)
+    
+    // Check if the current date falls within any existing subject's date range
+    const currentDate = new Date(date)
+    const overlaps = currentDate >= existingStartDate && currentDate <= existingEndDate
+    
+    if (overlaps) {
+      console.log(`[TRAINER] DATE RANGE OVERLAP: ${trainer.name} has existing subject ${existingSubject.name} (${s.date} to ${formatDate(existingEndDate)}) that overlaps with ${dateStr}`)
+    }
+    
+    return overlaps
+  })
+  
+  if (hasDateRangeOverlap) {
+    console.log(`[TRAINER] BLOCKED: ${trainer.name} has date range overlap on ${dateStr}`)
+    return false
+  }
+
   // Additional check for working hours
   const canFitInWorkingHours = canFitInTrainerWorkingHours(trainer, batch.timeSlot || "")
   if (!canFitInWorkingHours) {
     console.log(`[TRAINER] ${trainer.name} working hours cannot accommodate time slot ${batch.timeSlot}`)
-    return false
+      return false
   }
 
   return true
@@ -828,7 +863,8 @@ function getAssignmentConflicts(
   trainers: Trainer[],
   batch: Batch,
   existingSchedule: ScheduleSession[],
-  holidays: Holiday[]
+  holidays: Holiday[],
+  subjects: Subject[]
 ): string[] {
   const conflicts: string[] = []
   const dayOfWeek = getDayOfWeek(date)
@@ -888,7 +924,7 @@ function getAssignmentConflicts(
 
   // Check workload and scheduling conflicts
   const availableTrainersForDate = trainersNotOnLeave.filter((trainer) => {
-    return isTrainerAvailableOnDate(trainer, date, batch, existingSchedule, holidays)
+    return isTrainerAvailableOnDate(trainer, date, batch, existingSchedule, holidays, subjects)
   })
 
   if (availableTrainersForDate.length === 0) {
