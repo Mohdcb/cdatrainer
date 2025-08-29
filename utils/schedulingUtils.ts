@@ -181,7 +181,7 @@ export function generateSchedule(
       sessionType: "regular",
     }
 
-    // Try to assign a trainer for this session
+    // Try to assign a trainer for this session - BUT DON'T FORCE IT
     const sessionTrainer = findSubjectTrainer(
       currentDateForSchedule,
       currentSubject,
@@ -193,19 +193,22 @@ export function generateSchedule(
     )
 
     if (sessionTrainer) {
-      // Verify trainer is still available on this specific date
+      // CRITICAL: Double-check trainer availability on this specific date
       if (isTrainerAvailableOnDate(sessionTrainer, currentDateForSchedule, batch, schedule, holidays)) {
         session.trainerId = sessionTrainer.id
         session.status = "assigned"
-        // console.log(`[SCHEDULE] Assigned trainer ${sessionTrainer.name} to ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
+        console.log(`[SCHEDULE] Successfully assigned trainer ${sessionTrainer.name} to ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
       } else {
+        // Trainer became unavailable - keep session unassigned
+        session.status = "unassigned"
         session.conflicts = [`Trainer ${sessionTrainer.name} became unavailable on ${formatDate(currentDateForSchedule)}`]
-        // console.log(`[SCHEDULE] Trainer ${sessionTrainer.name} unavailable on ${formatDate(currentDateForSchedule)}`)
+        console.log(`[SCHEDULE] Trainer ${sessionTrainer.name} unavailable on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
       }
     } else {
-      // No trainer available - provide specific conflict reasons
+      // No trainer available - keep session unassigned for admin to handle
+      session.status = "unassigned"
       session.conflicts = getAssignmentConflicts(currentDateForSchedule, currentSubject, trainers, batch, schedule, holidays)
-      // console.log(`[SCHEDULE] No trainer available for ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
+      console.log(`[SCHEDULE] No trainer available for ${currentSubject.name} on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
     }
 
     // Simple session addition
@@ -343,6 +346,12 @@ function findSubjectTrainer(
     )
     if (!canHandleSubject) {
       console.log(`[TRAINER] ${trainer.name} cannot handle entire subject duration`)
+      return false
+    }
+
+    // Step 4: CRITICAL - Check if trainer is available on the specific start date
+    if (!isTrainerAvailableOnDate(trainer, startDate, batch, existingSchedule, holidays)) {
+      console.log(`[TRAINER] ${trainer.name} not available on start date ${formatDate(startDate)}`)
       return false
     }
 
@@ -524,9 +533,9 @@ function canTrainerHandleSubjectDuration(
       currentDate.setDate(currentDate.getDate() + 1)
     }
 
-    // Check if trainer is available on this specific date
+    // CRITICAL: Check if trainer is available on this specific date
     if (!isTrainerAvailableOnDate(trainer, currentDate, batch, existingSchedule, holidays)) {
-      console.log(`[TRAINER] ${trainer.name} unavailable on ${formatDate(currentDate)}`)
+      console.log(`[TRAINER] ${trainer.name} unavailable on ${formatDate(currentDate)} - cannot handle subject duration`)
       return false
     }
 
@@ -534,7 +543,7 @@ function canTrainerHandleSubjectDuration(
     currentDate.setDate(currentDate.getDate() + 1)
   }
 
-  console.log(`[TRAINER] ${trainer.name} can handle entire subject duration`)
+  console.log(`[TRAINER] ${trainer.name} can handle entire subject duration of ${duration} working days`)
   return true
 }
 
@@ -581,34 +590,40 @@ function isTrainerAvailableOnDate(
     s.date === dateStr && s.trainerId === trainer.id
   )
 
+  console.log(`[TRAINER] ${trainer.name} has ${existingSessions.length} existing sessions on ${dateStr}`)
+  if (existingSessions.length > 0) {
+    console.log(`[TRAINER] Existing sessions:`, existingSessions.map(s => `${s.subjectId} at ${s.timeSlot}`))
+  }
+
   if (batch.location === "online") {
     // FEATURE: Online Session Time Slot Management
     // LOGIC: Multiple online sessions allowed per day if time slots don't overlap
-      // Check if new session can fit within trainer's working hours
-  const canFitInWorkingHours = canFitInTrainerWorkingHours(trainer, batch.timeSlot || "")
+    
+    // Check if new session can fit within trainer's working hours
+    const canFitInWorkingHours = canFitInTrainerWorkingHours(trainer, batch.timeSlot || "")
     if (!canFitInWorkingHours) {
       console.log(`[TRAINER] ${trainer.name} working hours cannot accommodate time slot ${batch.timeSlot}`)
       return false
     }
 
-      // Check for time slot conflicts
-  const hasTimeConflict = hasTimeSlotConflict(batch.timeSlot || "", existingSessions)
+    // Check for time slot conflicts
+    const hasTimeConflict = hasTimeSlotConflict(batch.timeSlot || "", existingSessions)
     if (hasTimeConflict) {
       console.log(`[TRAINER] ${trainer.name} has time slot conflict on ${dateStr}`)
       return false
     }
 
     // Limit online sessions per day (configurable)
-    const maxOnlineSessionsPerDay = 4
+    const maxOnlineSessionsPerDay = 3 // Reduced from 4 to prevent overload
     if (existingSessions.length >= maxOnlineSessionsPerDay) {
-      console.log(`[TRAINER] ${trainer.name} already has ${existingSessions.length} sessions on ${dateStr}`)
+      console.log(`[TRAINER] ${trainer.name} already has ${existingSessions.length} sessions on ${dateStr} (max: ${maxOnlineSessionsPerDay})`)
       return false
     }
   } else {
     // FEATURE: Offline Session Management
     // LOGIC: Only one offline session per day per trainer
     if (existingSessions.length > 0) {
-      console.log(`[TRAINER] ${trainer.name} already has offline session on ${dateStr}`)
+      console.log(`[TRAINER] ${trainer.name} already has offline session on ${dateStr} - cannot double-book`)
       return false
     }
   }
