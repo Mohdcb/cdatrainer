@@ -17,6 +17,8 @@ export default function SubjectsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -73,6 +75,82 @@ export default function SubjectsPage() {
     setSubjects(updatedSubjects)
     setEditingSubject(null)
     resetForm()
+  }
+
+  const handleDeleteSubject = (subject: Subject) => {
+    setSubjectToDelete(subject)
+    setDeleteConfirmOpen(true)
+  }
+
+  const performSubjectDeletion = async () => {
+    if (!subjectToDelete) return
+    
+    const supabase = getSupabaseClient()
+    const idNum = Number.parseInt(subjectToDelete.id)
+    
+    try {
+      console.log(`[DELETE SUBJECT] Starting deletion for subject: ${subjectToDelete.name}`)
+      
+      // Check if subject is used in any courses
+      const { data: courseUsage, error: usageError } = await supabase
+        .from("course_subjects")
+        .select("course_id")
+        .eq("subject_id", idNum)
+      
+      if (usageError) {
+        console.error("[DELETE SUBJECT] Error checking course usage:", usageError)
+        console.error("[DELETE SUBJECT] Error details:", JSON.stringify(usageError, null, 2))
+        return
+      }
+      
+      if (courseUsage && courseUsage.length > 0) {
+        console.log(`[DELETE SUBJECT] Subject is used in ${courseUsage.length} courses`)
+        // For now, we'll just log this. In a real app, you might want to prevent deletion
+        // or show a different message
+      }
+      
+      // Check if subject is used by any trainers
+      const { data: trainerUsage, error: trainerError } = await supabase
+        .from("trainer_subjects")
+        .select("trainer_id")
+        .eq("subject_id", idNum)
+      
+      if (trainerError) {
+        console.error("[DELETE SUBJECT] Error checking trainer usage:", trainerError)
+        console.error("[DELETE SUBJECT] Error details:", JSON.stringify(trainerError, null, 2))
+        return
+      }
+      
+      if (trainerUsage && trainerUsage.length > 0) {
+        console.log(`[DELETE SUBJECT] Subject is used by ${trainerUsage.length} trainers`)
+      }
+      
+      // Delete the subject
+      console.log(`[DELETE SUBJECT] Deleting subject...`)
+      const { error: deleteError } = await supabase
+        .from("subjects")
+        .delete()
+        .eq("subject_id", idNum)
+      
+      if (deleteError) {
+        console.error("[DELETE SUBJECT] Error deleting subject:", deleteError)
+        console.error("[DELETE SUBJECT] Error details:", JSON.stringify(deleteError, null, 2))
+        return
+      }
+      
+      console.log(`[DELETE SUBJECT] Subject deleted successfully`)
+      
+      // Update UI
+      setSubjects(subjects.filter((s) => s.id !== subjectToDelete.id))
+      
+      // Close dialog and reset state
+      setDeleteConfirmOpen(false)
+      setSubjectToDelete(null)
+      
+    } catch (error: any) {
+      console.error("[DELETE SUBJECT] Unexpected error:", error)
+      console.error("[DELETE SUBJECT] Error details:", JSON.stringify(error, null, 2))
+    }
   }
 
   const resetForm = () => {
@@ -171,16 +249,7 @@ export default function SubjectsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={async () => {
-                    const supabase = getSupabaseClient()
-                    const idNum = Number.parseInt(subject.id)
-                    const { error } = await supabase.from("subjects").delete().eq("subject_id", idNum)
-                    if (error) {
-                      console.error("Failed to delete subject:", error)
-                      return
-                    }
-                    setSubjects(subjects.filter((s) => s.id !== subject.id))
-                  }}
+                  onClick={() => handleDeleteSubject(subject)}
                 >
                   Delete
                 </Button>
@@ -195,6 +264,63 @@ export default function SubjectsPage() {
           </Card>
         ))}
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">⚠️ Delete Subject</DialogTitle>
+          </DialogHeader>
+          
+          {subjectToDelete && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <p className="text-lg font-medium text-gray-900 mb-2">
+                  Are you sure you want to delete <span className="font-bold text-red-600">{subjectToDelete.name}</span>?
+                </p>
+                
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                  <p className="text-sm text-yellow-800 font-medium mb-1">📚 Subject Information</p>
+                  <p className="text-sm text-yellow-700">
+                    This subject has a duration of <span className="font-bold">{subjectToDelete.duration}</span> days.
+                  </p>
+                </div>
+                
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                  <p className="text-sm text-red-800 font-medium mb-1">⚠️ Warning</p>
+                  <p className="text-sm text-red-700">
+                    Deleting this subject will remove it from all courses and trainer expertise.
+                  </p>
+                </div>
+                
+                <p className="text-sm text-gray-600">
+                  This action cannot be undone.
+                </p>
+              </div>
+              
+              <div className="flex flex-col space-y-2">
+                <Button 
+                  onClick={performSubjectDeletion}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  🗑️ Delete Subject
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={() => setDeleteConfirmOpen(false)}
+                >
+                  ❌ Cancel
+                </Button>
+              </div>
+              
+              <div className="text-xs text-gray-500 text-center">
+                <p><strong>Note:</strong> This will affect courses and trainers that use this subject.</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   )
 }

@@ -19,6 +19,8 @@ export default function CoursesPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [courseToDelete, setCourseToDelete] = useState<Course | null>(null)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -95,6 +97,259 @@ export default function CoursesPage() {
       duration: course.duration,
       subjects: course.subjects,
     })
+  }
+
+  const handleDeleteCourse = (course: Course) => {
+    setCourseToDelete(course)
+    setDeleteConfirmOpen(true)
+  }
+
+  const performCourseDeletion = async () => {
+    if (!courseToDelete) return
+    
+    const supabase = getSupabaseClient()
+    const idNum = Number.parseInt(courseToDelete.id)
+    
+    try {
+      console.log(`[DELETE COURSE] Starting deletion for course: ${courseToDelete.name}`)
+      console.log(`[DELETE COURSE] Course ID as number: ${idNum}`)
+      
+      // Test database connection and table structure
+      console.log(`[DELETE COURSE] Testing database connection...`)
+      const { data: testData, error: testError } = await supabase
+        .from("courses")
+        .select("course_id, course_name")
+        .limit(1)
+      
+      if (testError) {
+        console.error("[DELETE COURSE] Database connection test failed:", testError)
+        console.error("[DELETE COURSE] Test error details:", JSON.stringify(testError, null, 2))
+      } else {
+        console.log("[DELETE COURSE] Database connection test successful:", testData)
+      }
+      
+      // Step 1: Check if course exists before deletion
+      console.log(`[DELETE COURSE] Checking if course exists...`)
+      const { data: courseExists, error: checkError } = await supabase
+        .from("courses")
+        .select("course_id, course_name")
+        .eq("course_id", idNum)
+      
+      if (checkError) {
+        console.error("[DELETE COURSE] Error checking course existence:", checkError)
+        console.error("[DELETE COURSE] Check error details:", JSON.stringify(checkError, null, 2))
+        return
+      }
+      
+      if (!courseExists || courseExists.length === 0) {
+        console.error("[DELETE COURSE] Course not found:", idNum)
+        return
+      }
+      
+      console.log(`[DELETE COURSE] Course found:`, courseExists[0])
+      
+      // Step 2: Check course_subjects relationships
+      console.log(`[DELETE COURSE] Checking course-subject relationships...`)
+      const { data: relationships, error: relError } = await supabase
+        .from("course_subjects")
+        .select("course_id, subject_id, position")
+        .eq("course_id", idNum)
+      
+      if (relError) {
+        console.error("[DELETE COURSE] Error checking relationships:", relError)
+        console.error("[DELETE COURSE] Relationship error details:", JSON.stringify(relError, null, 2))
+      } else {
+        console.log(`[DELETE COURSE] Found ${relationships?.length || 0} course-subject relationships`)
+      }
+      
+      // Step 3: Check subjects table references
+      console.log(`[DELETE COURSE] Checking subjects table references...`)
+      
+      // First, let's see what columns the subjects table actually has
+      const { data: subjectStructure, error: structureError } = await supabase
+        .from("subjects")
+        .select("*")
+        .limit(1)
+      
+      let subjectRefs: any[] = []
+      
+      if (structureError) {
+        console.error("[DELETE COURSE] Error checking subjects table structure:", structureError)
+        console.error("[DELETE COURSE] Structure error details:", JSON.stringify(structureError, null, 2))
+      } else if (subjectStructure && subjectStructure.length > 0) {
+        console.log("[DELETE COURSE] Subjects table structure:", Object.keys(subjectStructure[0]))
+        
+        // Check if course_id column exists
+        if ('course_id' in subjectStructure[0]) {
+          console.log("[DELETE COURSE] course_id column found in subjects table")
+          
+          const { data: refs, error: subRefError } = await supabase
+            .from("subjects")
+            .select("subject_id, subject_name")
+            .eq("course_id", idNum)
+          
+          if (subRefError) {
+            console.error("[DELETE COURSE] Error checking subjects references:", subRefError)
+            console.error("[DELETE COURSE] Subjects reference error details:", JSON.stringify(subRefError, null, 2))
+          } else {
+            subjectRefs = refs || []
+            console.log(`[DELETE COURSE] Found ${subjectRefs.length} subjects referencing this course`)
+          }
+        } else {
+          console.log("[DELETE COURSE] No course_id column found in subjects table")
+          console.log("[DELETE COURSE] The relationship might be through course_subjects table only")
+        }
+      }
+      
+      // Step 4: Delete subjects table references first
+      if (subjectRefs && subjectRefs.length > 0) {
+        console.log(`[DELETE COURSE] Deleting subjects table references...`)
+        
+        // Test the subjects table structure first
+        console.log(`[DELETE COURSE] Testing subjects table structure...`)
+        const { data: testSubjects, error: testSubError } = await supabase
+          .from("subjects")
+          .select("*")
+          .limit(1)
+        
+        if (testSubError) {
+          console.error("[DELETE COURSE] Subjects table structure test failed:", testSubError)
+          console.error("[DELETE COURSE] Test error details:", JSON.stringify(testSubError, null, 2))
+        } else {
+          console.log("[DELETE COURSE] Subjects table structure test successful:", testSubjects)
+          console.log("[DELETE COURSE] Subjects table columns:", Object.keys(testSubjects[0] || {}))
+        }
+        
+        // For each subject, we need to delete trainer_subjects first
+        console.log(`[DELETE COURSE] Processing ${subjectRefs.length} subjects...`)
+        
+        for (const subject of subjectRefs) {
+          const subjectId = subject.subject_id
+          console.log(`[DELETE COURSE] Processing subject ID: ${subjectId}`)
+          
+          // Step 4a: Delete schedules for this subject
+          console.log(`[DELETE COURSE] Deleting schedules for subject ${subjectId}...`)
+          const { error: schedulesError } = await supabase
+            .from("schedules")
+            .delete()
+            .eq("subject_id", subjectId)
+          
+          if (schedulesError) {
+            console.error(`[DELETE COURSE] Error deleting schedules for subject ${subjectId}:`, schedulesError)
+            console.error(`[DELETE COURSE] Error details:`, JSON.stringify(schedulesError, null, 2))
+            return
+          }
+          
+          console.log(`[DELETE COURSE] Schedules deleted for subject ${subjectId}`)
+          
+          // Step 4b: Delete trainer_subjects for this subject
+          console.log(`[DELETE COURSE] Deleting trainer_subjects for subject ${subjectId}...`)
+          const { error: trainerSubError } = await supabase
+            .from("trainer_subjects")
+            .delete()
+            .eq("subject_id", subjectId)
+          
+          if (trainerSubError) {
+            console.error(`[DELETE COURSE] Error deleting trainer_subjects for subject ${subjectId}:`, trainerSubError)
+            console.error(`[DELETE COURSE] Error details:`, JSON.stringify(trainerSubError, null, 2))
+            return
+          }
+          
+          console.log(`[DELETE COURSE] Trainer subjects deleted for subject ${subjectId}`)
+        }
+        
+        // Step 4c: Delete ALL course_subjects relationships that reference these subjects
+        console.log(`[DELETE COURSE] Deleting ALL course_subjects relationships for these subjects...`)
+        
+        // First, let's see what course_subjects records exist for these subjects
+        const subjectIds = subjectRefs.map(s => s.subject_id)
+        console.log(`[DELETE COURSE] Subject IDs to check:`, subjectIds)
+        
+        const { data: allCourseSubjects, error: checkCourseSubError } = await supabase
+          .from("course_subjects")
+          .select("course_id, subject_id, position")
+          .in("subject_id", subjectIds)
+        
+        if (checkCourseSubError) {
+          console.error("[DELETE COURSE] Error checking course_subjects:", checkCourseSubError)
+          console.error("[DELETE COURSE] Error details:", JSON.stringify(checkCourseSubError, null, 2))
+        } else {
+          console.log(`[DELETE COURSE] Found ${allCourseSubjects?.length || 0} course_subjects records for these subjects`)
+          console.log(`[DELETE COURSE] Course subjects details:`, allCourseSubjects)
+        }
+        
+        // Delete ALL course_subjects records for these subjects (not just for this course)
+        const { error: courseSubDeleteError } = await supabase
+          .from("course_subjects")
+          .delete()
+          .in("subject_id", subjectIds)
+        
+        if (courseSubDeleteError) {
+          console.error("[DELETE COURSE] Error deleting course_subjects relationships:", courseSubDeleteError)
+          console.error("[DELETE COURSE] Error details:", JSON.stringify(courseSubDeleteError, null, 2))
+          return
+        }
+        
+        console.log(`[DELETE COURSE] ALL course_subjects relationships deleted successfully`)
+        
+        // Now try to delete subjects with course_id
+        console.log(`[DELETE COURSE] Attempting to delete subjects with course_id = ${idNum}`)
+        const { error: subjectsDeleteError } = await supabase
+          .from("subjects")
+          .delete()
+          .eq("course_id", idNum)
+        
+        if (subjectsDeleteError) {
+          console.error("[DELETE COURSE] Error deleting subjects references:", subjectsDeleteError)
+          console.error("[DELETE COURSE] Subjects delete error details:", JSON.stringify(subjectsDeleteError, null, 2))
+          return
+        }
+        
+        console.log(`[DELETE COURSE] Subjects references deleted successfully`)
+      }
+      
+      // Step 5: Delete course_subjects relationships
+      console.log(`[DELETE COURSE] Deleting course-subject relationships...`)
+      const { error: subjectDeleteError } = await supabase
+        .from("course_subjects")
+        .delete()
+        .eq("course_id", idNum)
+      
+      if (subjectDeleteError) {
+        console.error("[DELETE COURSE] Error deleting course-subject relationships:", subjectDeleteError)
+        console.error("[DELETE COURSE] Error details:", JSON.stringify(subjectDeleteError, null, 2))
+        return
+      }
+      
+      // Step 6: Delete the course
+      console.log(`[DELETE COURSE] Deleting course...`)
+      const { error: courseDeleteError } = await supabase
+        .from("courses")
+        .delete()
+        .eq("course_id", idNum)
+      
+      if (courseDeleteError) {
+        console.error("[DELETE COURSE] Error deleting course:", courseDeleteError)
+        console.error("[DELETE COURSE] Error details:", JSON.stringify(courseDeleteError, null, 2))
+        return
+      }
+      
+      console.log(`[DELETE COURSE] Course deleted successfully`)
+      
+      // Update UI
+      setCourses(courses.filter((c) => c.id !== courseToDelete.id))
+      
+      // Close dialog and reset state
+      setDeleteConfirmOpen(false)
+      setCourseToDelete(null)
+      
+    } catch (error: any) {
+      console.error("[DELETE COURSE] Unexpected error:", error)
+      console.error("[DELETE COURSE] Error details:", JSON.stringify(error, null, 2))
+      console.error("[DELETE COURSE] Error type:", typeof error)
+      console.error("[DELETE COURSE] Error constructor:", error?.constructor?.name)
+      console.error("[DELETE COURSE] Error stack:", error?.stack)
+    }
   }
 
   const handleUpdateCourse = async () => {
@@ -238,16 +493,7 @@ export default function CoursesPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={async () => {
-                      const supabase = getSupabaseClient()
-                      const idNum = Number.parseInt(course.id)
-                      const { error } = await supabase.from("courses").delete().eq("course_id", idNum)
-                      if (error) {
-                        console.error("Failed to delete course:", error)
-                        return
-                      }
-                      setCourses(courses.filter((c) => c.id !== course.id))
-                    }}
+                    onClick={() => handleDeleteCourse(course)}
                   >
                     Delete
                   </Button>
@@ -313,6 +559,63 @@ export default function CoursesPage() {
           )
         })}
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">⚠️ Delete Course</DialogTitle>
+          </DialogHeader>
+          
+          {courseToDelete && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <p className="text-lg font-medium text-gray-900 mb-2">
+                  Are you sure you want to delete <span className="font-bold text-red-600">{courseToDelete.name}</span>?
+                </p>
+                
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                  <p className="text-sm text-yellow-800 font-medium mb-1">📚 Course Information</p>
+                  <p className="text-sm text-yellow-700">
+                    This course has <span className="font-bold">{courseToDelete.subjects.length}</span> subjects and lasts <span className="font-bold">{courseToDelete.duration}</span> days.
+                  </p>
+                </div>
+                
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                  <p className="text-sm text-red-800 font-medium mb-1">⚠️ Warning</p>
+                  <p className="text-sm text-red-700">
+                    Deleting this course will also remove all course-subject relationships.
+                  </p>
+                </div>
+                
+                <p className="text-sm text-gray-600">
+                  This action cannot be undone.
+                </p>
+              </div>
+              
+              <div className="flex flex-col space-y-2">
+                <Button 
+                  onClick={performCourseDeletion}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  🗑️ Delete Course
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={() => setDeleteConfirmOpen(false)}
+                >
+                  ❌ Cancel
+                </Button>
+              </div>
+              
+              <div className="text-xs text-gray-500 text-center">
+                <p><strong>Note:</strong> This will not affect existing batches or schedules.</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   )
 }
