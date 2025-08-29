@@ -363,7 +363,30 @@ export default function Calendar2Page() {
               </Badge>
             </div>
           </CardTitle>
-
+          
+          {/* Calendar Legend */}
+          <div className="flex items-center space-x-4 text-xs text-gray-600 mt-2">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-red-50 border border-red-200 rounded"></div>
+              <span>Holiday</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-gray-50 border border-gray-200 rounded"></div>
+              <span>Batch Not Started</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-orange-50 border border-orange-200 rounded"></div>
+              <span>No Trainer Assigned</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-blue-50 border border-blue-200 rounded"></div>
+              <span>No Class Scheduled</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-white border border-gray-200 rounded"></div>
+              <span>Normal (Trainer Assigned)</span>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {/* Batch Calendar Grid */}
@@ -414,134 +437,201 @@ export default function Calendar2Page() {
                     const dateStr = date.toISOString().split("T")[0]
                     const daySessions = getSessionsForBatchAndDate(batch.id, dateStr)
                     
+                    // Check if this is a holiday
+                    const isHoliday = holidays.some(holiday => 
+                      holiday.date === dateStr
+                    )
+                    
+                    // Check if batch has started (compare with batch start date)
+                    const batchStartDate = new Date(batch.startDate)
+                    const currentDate = new Date(dateStr)
+                    const batchHasStarted = currentDate >= batchStartDate
+                    
                     // Get the session for this date from schedules table
                     const session = daySessions[0] // Take first session if multiple exist
                     const daySubject = session ? subjects.find(s => s.id === session.subjectId) : null
                     const currentTrainer = trainers.find(t => t.id === session?.trainerId)
                     
-                    return (
-                      <div key={`${batch.id}-${dayIndex}`} className="p-2 border-r border-gray-200 border-b border-gray-200">
-                        {daySubject ? (
-                          <div className="space-y-2">
-                            <div className="font-medium text-gray-700 mb-2 text-center">
-                              {daySubject.name}
-                            </div>
-                            
-                            {/* Trainer Assignment Dropdown */}
-                            <Select
-                              value={session?.trainerId || "unassigned"}
-                              onValueChange={(trainerId) => {
-                                if (trainerId === "unassigned") {
-                                  handleTrainerChange(batch.id, daySubject.id, dateStr, null)
-                                } else {
-                                  handleTrainerChange(batch.id, daySubject.id, dateStr, trainerId)
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue placeholder="Assign trainer" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">
-                                  <span className="text-red-600">Unassigned</span>
-                                </SelectItem>
-                                {trainers
-                                  .filter(trainer => {
-                                    // Only show trainers with expertise in this subject
-                                    const hasExpertise = trainer.expertise.some(exp => 
-                                      exp.toLowerCase().includes(daySubject.name.toLowerCase()) ||
-                                      daySubject.name.toLowerCase().includes(exp.toLowerCase())
-                                    )
-                                    return hasExpertise && trainer.status === "active"
-                                  })
-                                  .map((trainer) => {
-                                                                            const isAvailable = isTrainerAvailable(trainer.id, dateStr, daySubject.id, batch.id)
-                                    
-                                    return (
-                                      <SelectItem 
-                                        key={trainer.id} 
-                                        value={trainer.id}
-                                        disabled={!isAvailable}
-                                        className={!isAvailable ? "opacity-50 text-gray-500" : ""}
-                                      >
-                                        <div className="flex items-center justify-between w-full">
-                                          <span className={!isAvailable ? "text-gray-500" : ""}>
-                                            {trainer.name}
-                                          </span>
-                                                                                     {!isAvailable && (
-                                             <Badge variant="destructive" className="text-xs">
-                                               Busy
-                                             </Badge>
-                                           )}
-                                        </div>
-                                      </SelectItem>
-                                    )
-                                  })}
-                              </SelectContent>
-                            </Select>
-                            
-
+                    // Determine what to show for this day
+                    let dayContent
+                    let dayStatus = "normal"
+                    
+                    if (isHoliday) {
+                      dayStatus = "holiday"
+                      dayContent = (
+                        <div className="space-y-2">
+                          <div className="text-center text-red-600 text-xs font-medium mb-2">
+                            🎉 Holiday
                           </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="text-center text-gray-400 text-xs mb-2">
-                              No subject scheduled
-                            </div>
-                            
-                            {/* Trainer Assignment Dropdown for unscheduled days */}
-                            <Select
-                              value="unassigned"
-                              onValueChange={(trainerId) => {
-                                if (trainerId !== "unassigned") {
-                                  // Create a new session with the selected trainer
-                                  // We need to get a subject for this day
-                                  const availableSubject = subjects.find(s => {
-                                    const course = courses.find(c => c.id === batch.courseId)
-                                    return course?.subjects?.includes(s.id)
-                                  })
+                          <div className="text-center text-gray-400 text-xs">
+                            {holidays.find(h => h.date === dateStr)?.name || "Holiday"}
+                          </div>
+                        </div>
+                      )
+                    } else if (!batchHasStarted) {
+                      dayStatus = "not-started"
+                      dayContent = (
+                        <div className="space-y-2">
+                          <div className="text-center text-gray-400 text-xs font-medium mb-2">
+                            ⏳ Batch Not Started
+                          </div>
+                          <div className="text-center text-gray-400 text-xs">
+                            Starts {batchStartDate.toLocaleDateString()}
+                          </div>
+                        </div>
+                      )
+                    } else if (daySubject) {
+                      // Subject is scheduled for this day
+                      dayStatus = "scheduled"
+                      dayContent = (
+                        <div className="space-y-2">
+                          <div className="font-medium text-gray-700 mb-2 text-center">
+                            {daySubject.name}
+                          </div>
+                          
+                          {/* Trainer Assignment Dropdown */}
+                          <Select
+                            value={session?.trainerId || "unassigned"}
+                            onValueChange={(trainerId) => {
+                              if (trainerId === "unassigned") {
+                                handleTrainerChange(batch.id, daySubject.id, dateStr, null)
+                              } else {
+                                handleTrainerChange(batch.id, daySubject.id, dateStr, trainerId)
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Assign trainer" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">
+                                <span className="text-red-600">Unassigned</span>
+                              </SelectItem>
+                              {trainers
+                                .filter(trainer => {
+                                  // Only show trainers with expertise in this subject
+                                  const hasExpertise = trainer.expertise.some(exp => 
+                                    exp.toLowerCase().includes(daySubject.name.toLowerCase()) ||
+                                    daySubject.name.toLowerCase().includes(exp.toLowerCase())
+                                  )
+                                  return hasExpertise && trainer.status === "active"
+                                })
+                                .map((trainer) => {
+                                  const isAvailable = isTrainerAvailable(trainer.id, dateStr, daySubject.id, batch.id)
                                   
-                                  if (availableSubject) {
-                                    handleTrainerChange(batch.id, availableSubject.id, dateStr, trainerId)
-                                  }
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue placeholder="Schedule & assign trainer" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">
-                                  <span className="text-gray-500">No class scheduled</span>
-                                </SelectItem>
-                                {trainers
-                                  .filter(trainer => trainer.status === "active")
-                                  .map((trainer) => {
-                                    const isAvailable = isTrainerAvailable(trainer.id, dateStr, '', batch.id)
-                                    
-                                    return (
-                                      <SelectItem 
-                                        key={trainer.id} 
-                                        value={trainer.id}
-                                        disabled={!isAvailable}
-                                        className={!isAvailable ? "opacity-50 text-gray-500" : ""}
-                                      >
-                                        <div className="flex items-center justify-between w-full">
-                                          <span className={!isAvailable ? "text-gray-500" : ""}>
-                                            {trainer.name}
-                                          </span>
-                                          {!isAvailable && (
-                                            <Badge variant="destructive" className="text-xs">
-                                              Busy
-                                            </Badge>
-                                          )}
-                                        </div>
-                                      </SelectItem>
-                                    )
-                                  })}
-                              </SelectContent>
-                            </Select>
+                                  return (
+                                    <SelectItem 
+                                      key={trainer.id} 
+                                      value={trainer.id}
+                                      disabled={!isAvailable}
+                                      className={!isAvailable ? "opacity-50 text-gray-500" : ""}
+                                    >
+                                      <div className="flex items-center justify-between w-full">
+                                        <span className={!isAvailable ? "text-gray-500" : ""}>
+                                          {trainer.name}
+                                        </span>
+                                        {!isAvailable && (
+                                          <Badge variant="destructive" className="text-xs">
+                                            Busy
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </SelectItem>
+                                  )
+                                })}
+                            </SelectContent>
+                          </Select>
+                          
+                          {/* Show status badge */}
+                          {!session?.trainerId && (
+                            <div className="text-center">
+                              <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
+                                No Trainer Assigned
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    } else {
+                      // No subject scheduled for this day
+                      dayStatus = "no-class"
+                      dayContent = (
+                        <div className="space-y-2">
+                          <div className="text-center text-gray-400 text-xs mb-2">
+                            No Class Scheduled
                           </div>
-                        )}
+                          
+                          {/* Trainer Assignment Dropdown for unscheduled days */}
+                          <Select
+                            value="unassigned"
+                            onValueChange={(trainerId) => {
+                              if (trainerId !== "unassigned") {
+                                // Create a new session with the selected trainer
+                                // We need to get a subject for this day
+                                const availableSubject = subjects.find(s => {
+                                  const course = courses.find(c => c.id === batch.courseId)
+                                  return course?.subjects?.includes(s.id)
+                                })
+                                
+                                if (availableSubject) {
+                                  handleTrainerChange(batch.id, availableSubject.id, dateStr, trainerId)
+                                }
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Schedule & assign trainer" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">
+                                <span className="text-gray-500">No class scheduled</span>
+                              </SelectItem>
+                              {trainers
+                                .filter(trainer => trainer.status === "active")
+                                .map((trainer) => {
+                                  const isAvailable = isTrainerAvailable(trainer.id, dateStr, '', batch.id)
+                                  
+                                  return (
+                                    <SelectItem 
+                                      key={trainer.id} 
+                                      value={trainer.id}
+                                      disabled={!isAvailable}
+                                      className={!isAvailable ? "opacity-50 text-gray-500" : ""}
+                                    >
+                                      <div className="flex items-center justify-between w-full">
+                                        <span className={!isAvailable ? "text-gray-500" : ""}>
+                                          {trainer.name}
+                                        </span>
+                                        {!isAvailable && (
+                                          <Badge variant="destructive" className="text-xs">
+                                            Busy
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </SelectItem>
+                                  )
+                                })}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )
+                    }
+                    
+                    // Apply different background colors based on status
+                    let cellClassName = "p-2 border-r border-gray-200 border-b border-gray-200"
+                    if (dayStatus === "holiday") {
+                      cellClassName += " bg-red-50"
+                    } else if (dayStatus === "not-started") {
+                      cellClassName += " bg-gray-50"
+                    } else if (dayStatus === "scheduled" && !session?.trainerId) {
+                      cellClassName += " bg-orange-50"
+                    } else if (dayStatus === "no-class") {
+                      cellClassName += " bg-blue-50"
+                    }
+                    
+                    return (
+                      <div key={`${batch.id}-${dayIndex}`} className={cellClassName}>
+                        {dayContent}
                       </div>
                     )
                   })}
