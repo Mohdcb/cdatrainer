@@ -948,7 +948,7 @@ export default function BatchesPage() {
               <AlertTriangle className="w-5 h-5" />
               Delete Batch
             </DialogTitle>
-            <DialogDescription className="text-left">
+            <div className="text-left text-sm text-muted-foreground">
               <div className="space-y-3">
                 <div className="font-medium text-gray-900">
                   Are you sure you want to delete <span className="text-red-600 font-bold">&quot;{batchToDelete?.name}&quot;</span>?
@@ -976,7 +976,7 @@ export default function BatchesPage() {
                   </div>
                 </div>
               </div>
-            </DialogDescription>
+            </div>
           </DialogHeader>
           <DialogFooter className="flex gap-2">
             <Button 
