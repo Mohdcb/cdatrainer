@@ -213,7 +213,7 @@ export default function TrainersPage() {
       console.log(`[DELETE TRAINER] Checking for associated schedules...`)
       const { data: associatedSchedules, error: scheduleCheckError } = await supabase
         .from("schedules")
-        .select("id, date, subject_id, batch_id")
+        .select("schedule_id, date, subject_id, batch_id")
         .eq("trainer_id", idNum)
       
       if (scheduleCheckError) {
