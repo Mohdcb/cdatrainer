@@ -72,6 +72,13 @@ export function generateSchedule(
   let workingDaysProcessed = 0
   let currentDateForSchedule = new Date(currentDate)
   
+  // FIXED: Track subject allocation properly
+  let currentSubjectIndex = 0
+  let daysAllocatedToCurrentSubject = 0
+  let currentSubject = courseSubjects[currentSubjectIndex]
+  
+  console.log(`[SCHEDULE] FIXED: Starting with subject: ${currentSubject.name} (${currentSubject.duration} days)`)
+  
   // console.log(`[SCHEDULE] DEBUG: Starting schedule generation`)
   // console.log(`[SCHEDULE] DEBUG: Initial date: ${formatDate(currentDateForSchedule)}`)
   // console.log(`[SCHEDULE] DEBUG: Total working days needed: ${totalWorkingDaysNeeded}`)
@@ -79,6 +86,8 @@ export function generateSchedule(
 
   while (workingDaysProcessed < totalWorkingDaysNeeded) {
     console.log(`[SCHEDULE] === LOOP ITERATION ${workingDaysProcessed + 1}/${totalWorkingDaysNeeded} ===`)
+    console.log(`[SCHEDULE] FIXED: Current subject: ${currentSubject.name} (${daysAllocatedToCurrentSubject}/${currentSubject.duration} days allocated)`)
+    
     // console.log(`[SCHEDULE] DEBUG: Current date: ${formatDate(currentDateForSchedule)}`)
     // console.log(`[SCHEDULE] DEBUG: Current day: ${getDayOfWeek(currentDateForSchedule)}`)
     // console.log(`[SCHEDULE] DEBUG: Is weekend: ${isWeekend(currentDateForSchedule)}`)
@@ -130,18 +139,18 @@ export function generateSchedule(
     // console.log(`[SCHEDULE] DEBUG: After weekend skipping - Is weekend: ${isWeekend(currentDateForSchedule)}`)
     // console.log(`[SCHEDULE] DEBUG: After weekend skipping - Is working day: ${isWorkingDayForBatch(currentDateForSchedule, effectiveBatchType)}`)
 
-    // Find which subject this working day belongs to
-    let subjectIndex = 0
-    let daysInCurrentSubject = 0
-    let currentSubject = courseSubjects[subjectIndex]
-    
-    for (let i = 0; i < courseSubjects.length; i++) {
-      if (workingDaysProcessed < daysInCurrentSubject + courseSubjects[i].duration) {
-        subjectIndex = i
-        currentSubject = courseSubjects[i]
+    // FIXED: Check if we need to move to the next subject
+    if (daysAllocatedToCurrentSubject >= currentSubject.duration) {
+      currentSubjectIndex++
+      daysAllocatedToCurrentSubject = 0
+      
+      if (currentSubjectIndex < courseSubjects.length) {
+        currentSubject = courseSubjects[currentSubjectIndex]
+        console.log(`[SCHEDULE] FIXED: Moving to next subject: ${currentSubject.name} (${currentSubject.duration} days)`)
+      } else {
+        console.log(`[SCHEDULE] FIXED: All subjects completed`)
         break
       }
-      daysInCurrentSubject += courseSubjects[i].duration
     }
 
     // EMERGENCY WEEKEND BLOCK: Force check for weekend days before session creation
@@ -186,6 +195,9 @@ export function generateSchedule(
     // Use global schedules to check for overlaps across ALL batches, not just current batch
     const globalScheduleForOverlapCheck = globalSchedules || []
     console.log(`[SCHEDULE] Using ${globalScheduleForOverlapCheck.length} global schedules for overlap detection`)
+    console.log(`[SCHEDULE] DEBUG: Current date for trainer assignment: ${formatDate(currentDateForSchedule)}`)
+    console.log(`[SCHEDULE] DEBUG: Subject: ${currentSubject.name} (${currentSubject.duration} days)`)
+    console.log(`[SCHEDULE] DEBUG: Available trainers: ${trainers.length}`)
     
     const sessionTrainer = findSubjectTrainer(
       currentDateForSchedule,
@@ -199,27 +211,39 @@ export function generateSchedule(
     )
 
     if (sessionTrainer) {
+      console.log(`[SCHEDULE] DEBUG: Trainer found: ${sessionTrainer.name}`)
+      
       // CRITICAL: Double-check trainer availability on this specific date
-      if (isTrainerAvailableOnDate(sessionTrainer, currentDateForSchedule, batch, schedule, holidays, subjects)) {
+      // Use global schedules for overlap check, not the current batch's schedule being built
+      console.log(`[SCHEDULE] DEBUG: Checking final availability for ${sessionTrainer.name} on ${formatDate(currentDateForSchedule)}`)
+      const finalAvailabilityCheck = isTrainerAvailableOnDate(sessionTrainer, currentDateForSchedule, batch, globalScheduleForOverlapCheck, holidays, subjects)
+      console.log(`[SCHEDULE] DEBUG: Final availability result: ${finalAvailabilityCheck}`)
+      
+      if (finalAvailabilityCheck) {
         session.trainerId = sessionTrainer.id
         session.status = "assigned"
-        console.log(`[SCHEDULE] Successfully assigned trainer ${sessionTrainer.name} to ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
+        console.log(`[SCHEDULE] ✅ SUCCESS: Assigned trainer ${sessionTrainer.name} to ${currentSubject.name} on ${formatDate(currentDateForSchedule)}`)
       } else {
         // Trainer became unavailable - keep session unassigned
-          session.status = "unassigned"
+        session.status = "unassigned"
         session.conflicts = [`Trainer ${sessionTrainer.name} became unavailable on ${formatDate(currentDateForSchedule)}`]
-        console.log(`[SCHEDULE] Trainer ${sessionTrainer.name} unavailable on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
-        }
-      } else {
+        console.log(`[SCHEDULE] ❌ FAILED: Trainer ${sessionTrainer.name} unavailable on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
+      }
+    } else {
+      console.log(`[SCHEDULE] DEBUG: No trainer found for ${currentSubject.name}`)
       // No trainer available - keep session unassigned for admin to handle
       session.status = "unassigned"
       session.conflicts = getAssignmentConflicts(currentDateForSchedule, currentSubject, trainers, batch, schedule, holidays, subjects)
-      console.log(`[SCHEDULE] No trainer available for ${currentSubject.name} on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
+      console.log(`[SCHEDULE] ❌ FAILED: No trainer available for ${currentSubject.name} on ${formatDate(currentDateForSchedule)} - keeping unassigned`)
     }
 
     // Simple session addition
       schedule.push(session)
     console.log(`[SCHEDULE] Added session to schedule - Date: ${formatDate(currentDateForSchedule)}, Day: ${dayName}, isWeekend: ${isWeekendDay}`)
+
+    // FIXED: Increment days allocated to current subject
+    daysAllocatedToCurrentSubject++
+    console.log(`[SCHEDULE] FIXED: Days allocated to ${currentSubject.name}: ${daysAllocatedToCurrentSubject}/${currentSubject.duration}`)
 
       // Move to next day
     // console.log(`[SCHEDULE] DEBUG: Before moving to next day - Current date: ${formatDate(currentDateForSchedule)}`)
@@ -715,7 +739,7 @@ function isTrainerAvailableOnDate(
   // SIMPLE RULE: One trainer = One session per day (regardless of location)
   if (existingSessions.length > 0) {
     console.log(`[TRAINER] BLOCKED: ${trainer.name} already has ${existingSessions.length} session(s) on ${dateStr}`)
-    console.log(`[TRAINER] Existing sessions:`, existingSessions.map(s => `${s.subjectId} at ${s.timeSlot}`))
+    console.log(`[SCHEDULE] Existing sessions:`, existingSessions.map(s => `${s.subjectId} at ${s.timeSlot}`))
     return false
   }
 
