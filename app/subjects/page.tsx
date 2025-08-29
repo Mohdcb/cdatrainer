@@ -8,6 +8,7 @@ import { Button } from "../../components/ui/button"
 import { Input } from "../../components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog"
 import { Label } from "../../components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select"
 import { Plus, Search, Edit, Clock } from "lucide-react"
 import type { Subject } from "../../hooks/useData"
 import { getSupabaseClient } from "../../lib/supabaseClient"
@@ -23,29 +24,83 @@ export default function SubjectsPage() {
   const [formData, setFormData] = useState({
     name: "",
     duration: 0,
+    courseId: "",
   })
 
   const filteredSubjects = subjects.filter((subject) => subject.name.toLowerCase().includes(searchTerm.toLowerCase()))
 
   const handleAddSubject = async () => {
     const supabase = getSupabaseClient()
-    const insertPayload = {
-      subject_name: formData.name,
-      duration_days: formData.duration,
+    
+    try {
+      console.log(`[ADD SUBJECT] Starting subject addition...`)
+      console.log(`[ADD SUBJECT] Form data:`, formData)
+      
+      // Validate required fields
+      if (!formData.courseId) {
+        console.error("[ADD SUBJECT] Course ID is required")
+        alert("Please select a course for this subject")
+        return
+      }
+      
+      const insertPayload = {
+        subject_name: formData.name,
+        duration_days: formData.duration,
+        course_id: Number.parseInt(formData.courseId),
+      }
+      
+      console.log(`[ADD SUBJECT] Insert payload:`, insertPayload)
+      
+      // Test database connection first
+      console.log(`[ADD SUBJECT] Testing database connection...`)
+      const { data: testData, error: testError } = await supabase
+        .from("subjects")
+        .select("*")
+        .limit(1)
+      
+      if (testError) {
+        console.error("[ADD SUBJECT] Database connection test failed:", testError)
+        console.error("[ADD SUBJECT] Test error details:", JSON.stringify(testError, null, 2))
+      } else {
+        console.log("[ADD SUBJECT] Database connection test successful:", testData)
+        console.log("[ADD SUBJECT] Subjects table structure:", Object.keys(testData[0] || {}))
+      }
+      
+      // Attempt to insert the subject
+      console.log(`[ADD SUBJECT] Attempting to insert subject...`)
+      const { data, error } = await supabase.from("subjects").insert(insertPayload).select("*").single()
+      
+      if (error) {
+        console.error("[ADD SUBJECT] Failed to add subject:", error)
+        console.error("[ADD SUBJECT] Error details:", JSON.stringify(error, null, 2))
+        console.error("[ADD SUBJECT] Error code:", error.code)
+        console.error("[ADD SUBJECT] Error message:", error.message)
+        return
+      }
+      
+      console.log(`[ADD SUBJECT] Subject inserted successfully:`, data)
+      
+      const newSubject: Subject = {
+        id: String(data.subject_id ?? data.id),
+        name: data.subject_name ?? formData.name,
+        duration: Number(data.duration_days ?? formData.duration),
+      }
+      
+      console.log(`[ADD SUBJECT] Created new subject object:`, newSubject)
+      
+      setSubjects([...subjects, newSubject])
+      setIsAddDialogOpen(false)
+      resetForm()
+      
+      console.log(`[ADD SUBJECT] Subject addition completed successfully`)
+      
+    } catch (error: any) {
+      console.error("[ADD SUBJECT] Unexpected error:", error)
+      console.error("[ADD SUBJECT] Error details:", JSON.stringify(error, null, 2))
+      console.error("[ADD SUBJECT] Error type:", typeof error)
+      console.error("[ADD SUBJECT] Error constructor:", error?.constructor?.name)
+      console.error("[ADD SUBJECT] Error stack:", error?.stack)
     }
-    const { data, error } = await supabase.from("subjects").insert(insertPayload).select("*").single()
-    if (error) {
-      console.error("Failed to add subject:", error)
-      return
-    }
-    const newSubject: Subject = {
-      id: String(data.subject_id ?? data.id),
-      name: data.subject_name ?? formData.name,
-      duration: Number(data.duration_days ?? formData.duration),
-    }
-    setSubjects([...subjects, newSubject])
-    setIsAddDialogOpen(false)
-    resetForm()
   }
 
   const handleEditSubject = (subject: Subject) => {
@@ -53,28 +108,59 @@ export default function SubjectsPage() {
     setFormData({
       name: subject.name,
       duration: subject.duration,
+      courseId: subject.courseId || "",
     })
   }
 
   const handleUpdateSubject = async () => {
     if (!editingSubject) return
-    const supabase = getSupabaseClient()
-    const payload = {
-      subject_name: formData.name,
-      duration_days: formData.duration,
+    
+    try {
+      console.log(`[UPDATE SUBJECT] Starting subject update...`)
+      console.log(`[UPDATE SUBJECT] Editing subject:`, editingSubject)
+      console.log(`[UPDATE SUBJECT] New form data:`, formData)
+      
+      const supabase = getSupabaseClient()
+      const payload = {
+        subject_name: formData.name,
+        duration_days: formData.duration,
+        course_id: Number.parseInt(formData.courseId),
+      }
+      
+      console.log(`[UPDATE SUBJECT] Update payload:`, payload)
+      
+      const subjectIdNum = Number.parseInt(editingSubject.id)
+      console.log(`[UPDATE SUBJECT] Subject ID as number:`, subjectIdNum)
+      
+      const { error } = await supabase.from("subjects").update(payload).eq("subject_id", subjectIdNum)
+      
+      if (error) {
+        console.error("[UPDATE SUBJECT] Failed to update subject:", error)
+        console.error("[UPDATE SUBJECT] Error details:", JSON.stringify(error, null, 2))
+        console.error("[UPDATE SUBJECT] Error code:", error.code)
+        console.error("[UPDATE SUBJECT] Error message:", error.message)
+        return
+      }
+      
+      console.log(`[UPDATE SUBJECT] Subject updated successfully`)
+      
+      const updatedSubjects = subjects.map((subject) =>
+        subject.id === editingSubject.id ? { ...subject, ...formData } : subject,
+      )
+      
+      setSubjects(updatedSubjects)
+      setEditingSubject(null)
+      resetForm()
+      
+      console.log(`[UPDATE SUBJECT] Subject update completed successfully`)
+      
+    } catch (error: any) {
+      console.error("[UPDATE SUBJECT] Unexpected error:", error)
+      console.error("[UPDATE SUBJECT] Error details:", JSON.stringify(error, null, 2))
+      console.error("[UPDATE SUBJECT] Error type:", typeof error)
+      console.error("[UPDATE SUBJECT] Error constructor:", error?.constructor?.name)
+      console.error("[UPDATE SUBJECT] Error stack:", error?.stack)
     }
-    const subjectIdNum = Number.parseInt(editingSubject.id)
-    const { error } = await supabase.from("subjects").update(payload).eq("subject_id", subjectIdNum)
-    if (error) {
-      console.error("Failed to update subject:", error)
-      return
-    }
-    const updatedSubjects = subjects.map((subject) =>
-      subject.id === editingSubject.id ? { ...subject, ...formData } : subject,
-    )
-    setSubjects(updatedSubjects)
-    setEditingSubject(null)
-    resetForm()
   }
 
   const handleDeleteSubject = (subject: Subject) => {
@@ -157,6 +243,7 @@ export default function SubjectsPage() {
     setFormData({
       name: "",
       duration: 0,
+      courseId: "",
     })
   }
 
@@ -194,6 +281,7 @@ export default function SubjectsPage() {
               setFormData={setFormData}
               onSubmit={handleAddSubject}
               onCancel={() => setIsAddDialogOpen(false)}
+              courses={courses}
             />
           </DialogContent>
         </Dialog>
@@ -243,6 +331,7 @@ export default function SubjectsPage() {
                       onSubmit={handleUpdateSubject}
                       onCancel={() => setEditingSubject(null)}
                       isEditing
+                      courses={courses}
                     />
                   </DialogContent>
                 </Dialog>
@@ -331,9 +420,10 @@ interface SubjectFormProps {
   onSubmit: () => void
   onCancel: () => void
   isEditing?: boolean
+  courses: any[]
 }
 
-function SubjectForm({ formData, setFormData, onSubmit, onCancel, isEditing }: SubjectFormProps) {
+function SubjectForm({ formData, setFormData, onSubmit, onCancel, isEditing, courses }: SubjectFormProps) {
   return (
     <div className="space-y-4">
       <div>
@@ -359,6 +449,25 @@ function SubjectForm({ formData, setFormData, onSubmit, onCancel, isEditing }: S
         />
         <p className="text-xs text-muted-foreground mt-1">
           Duration in working days for this subject
+        </p>
+      </div>
+
+      <div>
+        <Label htmlFor="courseId">Course</Label>
+        <Select value={formData.courseId} onValueChange={(value) => setFormData({ ...formData, courseId: value })}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select a course" />
+          </SelectTrigger>
+          <SelectContent>
+            {courses.map((course) => (
+              <SelectItem key={course.id} value={course.id}>
+                {course.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground mt-1">
+          Select the course this subject belongs to
         </p>
       </div>
 
