@@ -375,6 +375,10 @@ export default function Calendar2Page() {
               <span>Batch Not Started</span>
             </div>
             <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-purple-50 border border-purple-200 rounded"></div>
+              <span>Non-Working Day</span>
+            </div>
+            <div className="flex items-center space-x-2">
               <div className="w-3 h-3 bg-orange-50 border border-orange-200 rounded"></div>
               <span>No Trainer Assigned</span>
             </div>
@@ -442,6 +446,23 @@ export default function Calendar2Page() {
                       holiday.date === dateStr
                     )
                     
+                    // Check if this is a weekend day (Saturday = 6, Sunday = 0)
+                    const dayOfWeek = date.getDay()
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+                    
+                    // Check if this day is a working day for this batch type
+                    const isWorkingDayForBatch = (() => {
+                      if (batch.batchType === "weekday") {
+                        // Weekday batches: Monday-Friday are working days, Saturday-Sunday are not
+                        return dayOfWeek >= 1 && dayOfWeek <= 5
+                      } else if (batch.batchType === "weekend") {
+                        // Weekend batches: Saturday-Sunday are working days, Monday-Friday are not
+                        return dayOfWeek === 0 || dayOfWeek === 6
+                      }
+                      // Default to weekday behavior
+                      return dayOfWeek >= 1 && dayOfWeek <= 5
+                    })()
+                    
                     // Check if batch has started (compare with batch start date)
                     const batchStartDate = new Date(batch.startDate)
                     const currentDate = new Date(dateStr)
@@ -477,6 +498,20 @@ export default function Calendar2Page() {
                           </div>
                           <div className="text-center text-gray-400 text-xs">
                             Starts {batchStartDate.toLocaleDateString()}
+                          </div>
+                        </div>
+                      )
+                    } else if (!isWorkingDayForBatch) {
+                      // This day is not a working day for this batch type
+                      dayStatus = "non-working"
+                      const dayName = date.toLocaleDateString("en-US", { weekday: "long" })
+                      dayContent = (
+                        <div className="space-y-2">
+                          <div className="text-center text-gray-500 text-xs font-medium mb-2">
+                            🚫 Non-Working Day
+                          </div>
+                          <div className="text-center text-gray-400 text-xs">
+                            {dayName} - {batch.batchType === "weekday" ? "Weekend" : "Weekday"}
                           </div>
                         </div>
                       )
@@ -623,6 +658,8 @@ export default function Calendar2Page() {
                       cellClassName += " bg-red-50"
                     } else if (dayStatus === "not-started") {
                       cellClassName += " bg-gray-50"
+                    } else if (dayStatus === "non-working") {
+                      cellClassName += " bg-purple-50"
                     } else if (dayStatus === "scheduled" && !session?.trainerId) {
                       cellClassName += " bg-orange-50"
                     } else if (dayStatus === "no-class") {
