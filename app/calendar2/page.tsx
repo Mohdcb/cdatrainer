@@ -556,51 +556,30 @@ export default function Calendar2Page() {
                     if (isHoliday) {
                       dayStatus = "holiday"
                       dayContent = (
-                        <div className="space-y-2">
-                          <div className="text-center text-red-600 text-xs font-medium mb-2">
-                            🎉 Holiday
-                          </div>
-                          <div className="text-center text-gray-400 text-xs">
-                            {holidays.find(h => h.date === dateStr)?.name || "Holiday"}
-                          </div>
+                        <div className="text-center text-red-600 text-xs">
+                          Holiday
                         </div>
                       )
                     } else if (!batchHasStarted) {
                       dayStatus = "not-started"
                       dayContent = (
-                        <div className="space-y-2">
-                          <div className="text-center text-gray-400 text-xs font-medium mb-2">
-                            ⏳ Batch Not Started
-                          </div>
-                          <div className="text-center text-gray-400 text-xs">
-                            Starts {batchStartDate.toLocaleDateString()}
-                          </div>
+                        <div className="text-center text-gray-400 text-xs">
+                          Batch Not Started
                         </div>
                       )
                     } else if (batchHasEnded) {
                       dayStatus = "ended"
                       dayContent = (
-                        <div className="space-y-2">
-                          <div className="text-center text-gray-400 text-xs font-medium mb-2">
-                            🏁 Batch Ended
-                          </div>
-                          <div className="text-center text-gray-400 text-xs">
-                            Ended {batchEndDate.toLocaleDateString()}
-                          </div>
+                        <div className="text-center text-gray-400 text-xs">
+                          Batch Ended
                         </div>
                       )
                     } else if (!isWorkingDayForBatch) {
                       // This day is not a working day for this batch type
                       dayStatus = "non-working"
-                      const dayName = date.toLocaleDateString("en-US", { weekday: "long" })
                       dayContent = (
-                        <div className="space-y-2">
-                          <div className="text-center text-gray-500 text-xs font-medium mb-2">
-                            🚫 Non-Working Day
-                          </div>
-                          <div className="text-center text-gray-400 text-xs">
-                            {dayName} - {batch.batchType === "weekday" ? "Weekend" : "Weekday"}
-                          </div>
+                        <div className="text-center text-gray-500 text-xs">
+                          Non-Working Day
                         </div>
                       )
                     } else if (daySubject) {
