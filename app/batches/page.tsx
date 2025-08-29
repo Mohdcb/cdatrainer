@@ -671,7 +671,7 @@ export default function BatchesPage() {
       const start_time = rawStart.length === 5 ? `${rawStart}:00` : rawStart
       const end_time = rawEnd.length === 5 ? `${rawEnd}:00` : rawEnd
       
-      return {
+      const row = {
         batch_id: batchIdNum,
         trainer_id: s.trainerId && s.trainerId !== "unassigned" ? Number.parseInt(s.trainerId) : 0, // Use 0 for unassigned
         subject_id: Number.parseInt(s.subjectId), // Now guaranteed to be valid
@@ -680,15 +680,39 @@ export default function BatchesPage() {
         end_time,
         status: "planned",
       }
+      
+      // Validate the row data
+      if (!row.batch_id || !row.subject_id || !row.date) {
+        console.error(`[SCHEDULE] Invalid row data:`, row)
+        throw new Error(`Invalid row data: batch_id=${row.batch_id}, subject_id=${row.subject_id}, date=${row.date}`)
+      }
+      
+      return row
     })
+    
+    console.log(`[SCHEDULE] Prepared ${rows.length} rows for insertion`)
+    console.log(`[SCHEDULE] Sample row:`, rows[0])
     try {
+      console.log(`[SCHEDULE] Starting database operations for batch ${batchIdNum}`)
+      console.log(`[SCHEDULE] Rows to insert:`, rows.slice(0, 3)) // Log first 3 rows as sample
+      
       // Replace any existing generated schedules for this batch
-      await supabase.from("schedules").delete().eq("batch_id", batchIdNum)
+      console.log(`[SCHEDULE] Deleting existing schedules for batch ${batchIdNum}`)
+      const { error: deleteError } = await supabase.from("schedules").delete().eq("batch_id", batchIdNum)
+      if (deleteError) {
+        console.error(`[SCHEDULE] Delete error:`, deleteError)
+        throw deleteError
+      }
+      console.log(`[SCHEDULE] Existing schedules deleted successfully`)
       
       // ENHANCED: Insert ALL sessions, including unassigned ones
       // This ensures admins can see and assign trainers later
+      console.log(`[SCHEDULE] Inserting ${rows.length} new sessions`)
       const { error: insError } = await supabase.from("schedules").insert(rows)
-      if (insError) throw insError
+      if (insError) {
+        console.error(`[SCHEDULE] Insert error:`, insError)
+        throw insError
+      }
       
       console.log(`[SCHEDULE] Inserted ${rows.length} sessions (including unassigned ones)`)
 
@@ -741,7 +765,33 @@ export default function BatchesPage() {
       console.log(`[SCHEDULE] All ${rows.length} sessions saved successfully`)
     } catch (e) {
       console.error("Failed to persist schedule:", e)
-      setErrorMessage((e as any)?.message || "Failed to persist schedule")
+      console.error("Error details:", {
+        error: e,
+        errorType: typeof e,
+        errorKeys: e ? Object.keys(e) : 'no keys',
+        errorMessage: (e as any)?.message,
+        errorCode: (e as any)?.code,
+        errorDetails: (e as any)?.details,
+        errorHint: (e as any)?.hint,
+        rows: rows.length,
+        batchId: batchIdNum
+      })
+      
+      // Try to get more specific error information
+      let errorMsg = "Failed to persist schedule"
+      if ((e as any)?.message) {
+        errorMsg = (e as any).message
+      } else if ((e as any)?.details) {
+        errorMsg = (e as any).details
+      } else if ((e as any)?.hint) {
+        errorMsg = (e as any).hint
+      } else if (typeof e === 'string') {
+        errorMsg = e
+      } else if (e && typeof e === 'object') {
+        errorMsg = JSON.stringify(e)
+      }
+      
+      setErrorMessage(errorMsg)
       setErrorOpen(true)
     }
   }
