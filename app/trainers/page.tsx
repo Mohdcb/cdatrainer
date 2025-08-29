@@ -15,6 +15,7 @@ import { Checkbox } from "../../components/ui/checkbox"
 import { Plus, Search, Edit, MapPin, Clock, BookOpen } from "lucide-react"
 import type { Trainer } from "../../hooks/useData"
 import { getSupabaseClient } from "../../lib/supabaseClient"
+import { Toast, useToast } from "../../components/ui/toast"
 
 export default function TrainersPage() {
   const { trainers, subjects, setTrainers, loading } = useData()
@@ -24,6 +25,7 @@ export default function TrainersPage() {
   const [editingTrainer, setEditingTrainer] = useState<Trainer | null>(null)
   const [successMessage, setSuccessMessage] = useState("")
   const [showSuccess, setShowSuccess] = useState(false)
+  const { toast, showToast, hideToast } = useToast()
 
   // Ensure form data is properly initialized
   useEffect(() => {
@@ -203,16 +205,84 @@ export default function TrainersPage() {
   const handleDeleteTrainer = async (trainerId: string) => {
     const supabase = getSupabaseClient()
     const idNum = Number.parseInt(trainerId)
-    await supabase.from("trainer_subjects").delete().eq("trainer_id", idNum)
-    const { error } = await supabase.from("trainers").delete().eq("trainer_id", idNum)
-    if (error) {
-      console.error("Failed to delete trainer:", error)
-      return
-    }
     
-    // Show success message
-    showSuccessMessage("Trainer deleted successfully!")
-    setTrainers(trainers.filter((t) => t.id !== trainerId))
+    try {
+      console.log(`[DELETE TRAINER] Starting deletion for trainer ID: ${trainerId}`)
+      
+      // Step 1: Check if trainer has any associated schedules
+      console.log(`[DELETE TRAINER] Checking for associated schedules...`)
+      const { data: associatedSchedules, error: scheduleCheckError } = await supabase
+        .from("schedules")
+        .select("id, date, subject_id, batch_id")
+        .eq("trainer_id", idNum)
+      
+      if (scheduleCheckError) {
+        console.error("[DELETE TRAINER] Error checking schedules:", scheduleCheckError)
+        showToast(`Failed to check trainer schedules: ${scheduleCheckError.message}`, 'error')
+        return
+      }
+      
+      if (associatedSchedules && associatedSchedules.length > 0) {
+        console.log(`[DELETE TRAINER] Found ${associatedSchedules.length} associated schedules`)
+        showToast(`Cannot delete trainer: They have ${associatedSchedules.length} scheduled sessions. Please reassign or remove these sessions first.`, 'error')
+        return
+      }
+      
+      // Step 2: Check if trainer has any associated leaves
+      console.log(`[DELETE TRAINER] Checking for associated leaves...`)
+      const { data: associatedLeaves, error: leaveCheckError } = await supabase
+        .from("leaves")
+        .select("id, start_date, end_date")
+        .eq("trainer_id", idNum)
+      
+      if (leaveCheckError) {
+        console.error("[DELETE TRAINER] Error checking leaves:", leaveCheckError)
+        showToast(`Failed to check trainer leaves: ${leaveCheckError.message}`, 'error')
+        return
+      }
+      
+      if (associatedLeaves && associatedLeaves.length > 0) {
+        console.log(`[DELETE TRAINER] Found ${associatedLeaves.length} associated leaves`)
+        showToast(`Cannot delete trainer: They have ${associatedLeaves.length} leave records. Please remove these leaves first.`, 'error')
+        return
+      }
+      
+      // Step 3: Delete trainer-subject relationships
+      console.log(`[DELETE TRAINER] Deleting trainer-subject relationships...`)
+      const { error: subjectDeleteError } = await supabase
+        .from("trainer_subjects")
+        .delete()
+        .eq("trainer_id", idNum)
+      
+      if (subjectDeleteError) {
+        console.error("[DELETE TRAINER] Error deleting trainer-subject relationships:", subjectDeleteError)
+        showToast(`Failed to delete trainer-subject relationships: ${subjectDeleteError.message}`, 'error')
+        return
+      }
+      
+      // Step 4: Delete the trainer
+      console.log(`[DELETE TRAINER] Deleting trainer...`)
+      const { error: trainerDeleteError } = await supabase
+        .from("trainers")
+        .delete()
+        .eq("trainer_id", idNum)
+      
+      if (trainerDeleteError) {
+        console.error("[DELETE TRAINER] Error deleting trainer:", trainerDeleteError)
+        showToast(`Failed to delete trainer: ${trainerDeleteError.message}`, 'error')
+        return
+      }
+      
+      console.log(`[DELETE TRAINER] Trainer deleted successfully`)
+      
+      // Show success message
+      showToast("Trainer deleted successfully! 🎉", 'success')
+      setTrainers(trainers.filter((t) => t.id !== trainerId))
+      
+    } catch (error: any) {
+      console.error("[DELETE TRAINER] Unexpected error:", error)
+      showToast(`Failed to delete trainer: ${error?.message || "Unknown error occurred"}`, 'error')
+    }
   }
 
   const resetForm = () => {
@@ -414,6 +484,14 @@ export default function TrainersPage() {
           </Card>
         ))}
       </div>
+      
+      {/* Beautiful Toast Notifications */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={hideToast}
+      />
     </MainLayout>
   )
 }
