@@ -259,7 +259,7 @@ export default function BatchesPage() {
       
       // Check each session for conflicts
       for (const session of batchSessions) {
-        if (!session.trainer_id) continue // Skip unassigned sessions
+        if (!session.trainer_id || session.trainer_id === 0) continue // Skip unassigned sessions
         
         const trainerId = String(session.trainer_id)
         const sessionDate = session.date
@@ -434,32 +434,31 @@ export default function BatchesPage() {
             }
           }
         } else if (assignment.trainerId === null || assignment.trainerId === "unassigned") {
-          // Remove trainer assignment for unassigned subjects
+          // Set trainer assignment to 0 (unassigned) for these subjects
           const sessionsToUpdate = schedules.filter(
             s => s.batchId === selectedBatch.id && s.subjectId === assignment.subjectId
           )
           
-          console.log(`[MANUAL ASSIGNMENT] Removing trainer from ${sessionsToUpdate.length} sessions for subject ${assignment.subjectName}`)
+          console.log(`[MANUAL ASSIGNMENT] Setting ${sessionsToUpdate.length} sessions to unassigned for subject ${assignment.subjectName}`)
           
-          // Instead of trying to set trainer_id to null (which may not be allowed),
-          // we'll delete these sessions and let the system regenerate them
+          // Update sessions to have trainer_id = 0 (unassigned)
           for (const session of sessionsToUpdate) {
             try {
-              console.log(`[MANUAL ASSIGNMENT] Deleting unassigned session ${session.id}`)
+              console.log(`[MANUAL ASSIGNMENT] Setting session ${session.id} to unassigned`)
               const { error } = await supabase
                 .from("schedules")
-                .delete()
+                .update({ trainer_id: 0 }) // Set to 0 for unassigned
                 .eq("schedule_id", session.id)
               
               if (error) {
-                console.error(`Failed to delete session ${session.id}:`, error)
+                console.error(`Failed to update session ${session.id}:`, error)
                 errorCount++
               } else {
-                console.log(`[MANUAL ASSIGNMENT] Successfully deleted session ${session.id}`)
+                console.log(`[MANUAL ASSIGNMENT] Successfully set session ${session.id} to unassigned`)
                 successCount++
               }
-            } catch (deleteError) {
-              console.error(`Exception deleting session ${session.id}:`, deleteError)
+            } catch (updateError) {
+              console.error(`Exception updating session ${session.id}:`, updateError)
               errorCount++
             }
           }
@@ -479,7 +478,7 @@ export default function BatchesPage() {
         ).length || 0
         
         if (unassignedCount > 0) {
-          message += ` ${unassignedCount} subjects are now unassigned. Use "Regenerate Schedule" to recreate their sessions.`
+          message += ` ${unassignedCount} subjects are now unassigned. You can manually assign trainers to them later.`
         }
       }
       
@@ -500,7 +499,7 @@ export default function BatchesPage() {
         // Update the schedules state
         const updatedSchedulesList = schedules.map(s => {
           const updated = updatedSchedules.find(us => us.schedule_id === s.id)
-          return updated ? { ...s, trainerId: updated.trainer_id ? String(updated.trainer_id) : undefined } : s
+          return updated ? { ...s, trainerId: updated.trainer_id && updated.trainer_id !== 0 ? String(updated.trainer_id) : undefined } : s
         })
         // You would need to add a setSchedules function to update the main schedules state
       }
@@ -671,9 +670,10 @@ export default function BatchesPage() {
       const [rawStart, rawEnd] = (s.timeSlot || "09:00-17:00").split("-")
       const start_time = rawStart.length === 5 ? `${rawStart}:00` : rawStart
       const end_time = rawEnd.length === 5 ? `${rawEnd}:00` : rawEnd
+      
       return {
         batch_id: batchIdNum,
-        trainer_id: s.trainerId ? Number.parseInt(s.trainerId) : null,
+        trainer_id: s.trainerId && s.trainerId !== "unassigned" ? Number.parseInt(s.trainerId) : 0, // Use 0 for unassigned
         subject_id: Number.parseInt(s.subjectId), // Now guaranteed to be valid
         date: s.date,
         start_time,
@@ -712,7 +712,7 @@ export default function BatchesPage() {
         const startTime = s.start_time ?? "09:00:00"
         const endTime = s.end_time ?? "17:00:00"
         const timeSlot = `${String(startTime).slice(0,5)}-${String(endTime).slice(0,5)}`
-        const trainerId = s.trainer_id != null ? String(s.trainer_id) : undefined
+        const trainerId = s.trainer_id && s.trainer_id !== 0 ? String(s.trainer_id) : undefined
         const status = trainerId ? "assigned" : "unassigned"
         
         // ENHANCED: Handle unassigned sessions properly
