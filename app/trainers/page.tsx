@@ -25,6 +25,8 @@ export default function TrainersPage() {
   const [editingTrainer, setEditingTrainer] = useState<Trainer | null>(null)
   const [successMessage, setSuccessMessage] = useState("")
   const [showSuccess, setShowSuccess] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [trainerToDelete, setTrainerToDelete] = useState<{ id: string, name: string, schedules: any[], leaves: any[] } | null>(null)
   const { toast, showToast, hideToast } = useToast()
 
   // Ensure form data is properly initialized
@@ -207,7 +209,30 @@ export default function TrainersPage() {
     const idNum = Number.parseInt(trainerId)
     
     try {
-      console.log(`[DELETE TRAINER] Starting deletion for trainer ID: ${trainerId}`)
+      console.log(`[DELETE TRAINER] Starting deletion check for trainer ID: ${trainerId}`)
+      console.log(`[DELETE TRAINER] Trainer ID as number: ${idNum}`)
+      
+      // Test query to check table structure
+      console.log(`[DELETE TRAINER] Testing table structure...`)
+      
+      try {
+        const { data: testData, error: testError } = await supabase
+          .from("trainer_leaves")
+          .select("*")
+          .limit(1)
+        
+        console.log("[DELETE TRAINER] Table structure test result:", { data: testData, error: testError })
+        
+        if (testError) {
+          console.error("[DELETE TRAINER] Table structure test failed:", testError)
+          console.error("[DELETE TRAINER] Test error details:", JSON.stringify(testError, null, 2))
+        } else {
+          console.log("[DELETE TRAINER] Table structure test successful:", testData)
+        }
+      } catch (testException: any) {
+        console.error("[DELETE TRAINER] Exception during table structure test:", testException)
+        console.error("[DELETE TRAINER] Test exception details:", JSON.stringify(testException, null, 2))
+      }
       
       // Step 1: Check if trainer has any associated schedules
       console.log(`[DELETE TRAINER] Checking for associated schedules...`)
@@ -218,36 +243,77 @@ export default function TrainersPage() {
       
       if (scheduleCheckError) {
         console.error("[DELETE TRAINER] Error checking schedules:", scheduleCheckError)
-        showToast(`Failed to check trainer schedules: ${scheduleCheckError.message}`, 'error')
-        return
-      }
-      
-      if (associatedSchedules && associatedSchedules.length > 0) {
-        console.log(`[DELETE TRAINER] Found ${associatedSchedules.length} associated schedules`)
-        showToast(`Cannot delete trainer: They have ${associatedSchedules.length} scheduled sessions. Please reassign or remove these sessions first.`, 'error')
+        console.error("[DELETE TRAINER] Error details:", JSON.stringify(scheduleCheckError, null, 2))
+        showToast(`Failed to check trainer schedules: ${scheduleCheckError.message || 'Unknown error'}`, 'error')
         return
       }
       
       // Step 2: Check if trainer has any associated leaves
       console.log(`[DELETE TRAINER] Checking for associated leaves...`)
-      const { data: associatedLeaves, error: leaveCheckError } = await supabase
-        .from("leaves")
-        .select("id, start_date, end_date")
-        .eq("trainer_id", idNum)
       
-      if (leaveCheckError) {
-        console.error("[DELETE TRAINER] Error checking leaves:", leaveCheckError)
-        showToast(`Failed to check trainer leaves: ${leaveCheckError.message}`, 'error')
+      let leavesData: any[] = []
+      
+      try {
+        const { data: associatedLeaves, error: leaveCheckError } = await supabase
+          .from("trainer_leaves")
+          .select("trainer_id, leave_date, leave_type, reason, status")
+          .eq("trainer_id", idNum)
+        
+        console.log("[DELETE TRAINER] Leaves query result:", { data: associatedLeaves, error: leaveCheckError })
+        
+        if (leaveCheckError) {
+          console.error("[DELETE TRAINER] Error checking leaves:", leaveCheckError)
+          console.error("[DELETE TRAINER] Error details:", JSON.stringify(leaveCheckError, null, 2))
+          showToast(`Failed to check trainer leaves: ${leaveCheckError.message || 'Unknown error'}`, 'error')
+          return
+        }
+        
+        // Store the leaves data for later use
+        leavesData = associatedLeaves || []
+        console.log(`[DELETE TRAINER] Found ${leavesData.length} associated leaves`)
+        
+      } catch (leaveError: any) {
+        console.error("[DELETE TRAINER] Exception during leaves check:", leaveError)
+        console.error("[DELETE TRAINER] Exception details:", JSON.stringify(leaveError, null, 2))
+        showToast(`Exception checking trainer leaves: ${leaveError?.message || 'Unknown exception'}`, 'error')
         return
       }
       
-      if (associatedLeaves && associatedLeaves.length > 0) {
-        console.log(`[DELETE TRAINER] Found ${associatedLeaves.length} associated leaves`)
-        showToast(`Cannot delete trainer: They have ${associatedLeaves.length} leave records. Please remove these leaves first.`, 'error')
+      // If we couldn't get leaves data, assume no leaves
+      if (!leavesData) {
+        console.log("[DELETE TRAINER] No leaves data available, assuming no leaves")
+        leavesData = []
+      }
+      
+      // If trainer has dependencies, show confirmation dialog
+      if ((associatedSchedules && associatedSchedules.length > 0) || (leavesData && leavesData.length > 0)) {
+        const trainer = trainers.find(t => t.id === trainerId)
+        setTrainerToDelete({
+          id: trainerId,
+          name: trainer?.name || 'Unknown Trainer',
+          schedules: associatedSchedules || [],
+          leaves: leavesData || []
+        })
+        setDeleteConfirmOpen(true)
         return
       }
       
-      // Step 3: Delete trainer-subject relationships
+      // No dependencies, proceed with deletion
+      await performTrainerDeletion(trainerId, idNum)
+      
+    } catch (error: any) {
+      console.error("[DELETE TRAINER] Unexpected error:", error)
+      showToast(`Failed to check trainer dependencies: ${error?.message || "Unknown error occurred"}`, 'error')
+    }
+    }
+  
+  const performTrainerDeletion = async (trainerId: string, idNum: number) => {
+    const supabase = getSupabaseClient()
+    
+    try {
+      console.log(`[DELETE TRAINER] Performing deletion for trainer ID: ${trainerId}`)
+      
+      // Step 1: Delete trainer-subject relationships
       console.log(`[DELETE TRAINER] Deleting trainer-subject relationships...`)
       const { error: subjectDeleteError } = await supabase
         .from("trainer_subjects")
@@ -260,7 +326,7 @@ export default function TrainersPage() {
         return
       }
       
-      // Step 4: Delete the trainer
+      // Step 2: Delete the trainer
       console.log(`[DELETE TRAINER] Deleting trainer...`)
       const { error: trainerDeleteError } = await supabase
         .from("trainers")
@@ -280,11 +346,92 @@ export default function TrainersPage() {
       setTrainers(trainers.filter((t) => t.id !== trainerId))
       
     } catch (error: any) {
-      console.error("[DELETE TRAINER] Unexpected error:", error)
+      console.error("[DELETE TRAINER] Unexpected error during deletion:", error)
       showToast(`Failed to delete trainer: ${error?.message || "Unknown error occurred"}`, 'error')
     }
   }
-
+  
+  const handleForceDelete = async () => {
+    if (!trainerToDelete) return
+    
+    const supabase = getSupabaseClient()
+    const idNum = Number.parseInt(trainerToDelete.id)
+    
+    try {
+      console.log(`[FORCE DELETE] Starting force deletion for trainer: ${trainerToDelete.name}`)
+      
+      // Step 1: Delete all associated schedules
+      if (trainerToDelete.schedules.length > 0) {
+        console.log(`[FORCE DELETE] Deleting ${trainerToDelete.schedules.length} schedules...`)
+        const { error: scheduleDeleteError } = await supabase
+          .from("schedules")
+          .delete()
+          .eq("trainer_id", idNum)
+        
+        if (scheduleDeleteError) {
+          console.error("[FORCE DELETE] Error deleting schedules:", scheduleDeleteError)
+          showToast(`Failed to delete schedules: ${scheduleDeleteError.message}`, 'error')
+          return
+        }
+      }
+      
+      // Step 2: Delete all associated leaves
+      if (trainerToDelete.leaves.length > 0) {
+        console.log(`[FORCE DELETE] Deleting ${trainerToDelete.leaves.length} leaves...`)
+        const { error: leaveDeleteError } = await supabase
+          .from("trainer_leaves")
+          .delete()
+          .eq("trainer_id", idNum)
+        
+        if (leaveDeleteError) {
+          console.error("[FORCE DELETE] Error deleting leaves:", leaveDeleteError)
+          showToast(`Failed to delete leaves: ${leaveDeleteError.message}`, 'error')
+          return
+        }
+      }
+      
+      // Step 3: Delete trainer-subject relationships
+      console.log(`[FORCE DELETE] Deleting trainer-subject relationships...`)
+      const { error: subjectDeleteError } = await supabase
+        .from("trainer_subjects")
+        .delete()
+        .eq("trainer_id", idNum)
+      
+      if (subjectDeleteError) {
+        console.error("[FORCE DELETE] Error deleting trainer-subject relationships:", subjectDeleteError)
+        showToast(`Failed to delete trainer-subject relationships: ${subjectDeleteError.message}`, 'error')
+        return
+      }
+      
+      // Step 4: Delete the trainer
+      console.log(`[FORCE DELETE] Deleting trainer...`)
+      const { error: trainerDeleteError } = await supabase
+        .from("trainers")
+        .delete()
+        .eq("trainer_id", idNum)
+      
+      if (trainerDeleteError) {
+        console.error("[FORCE DELETE] Error deleting trainer:", trainerDeleteError)
+        showToast(`Failed to delete trainer: ${trainerDeleteError.message}`, 'error')
+        return
+      }
+      
+      console.log(`[FORCE DELETE] Trainer and all dependencies deleted successfully`)
+      
+      // Show success message
+      showToast(`Trainer "${trainerToDelete.name}" and all dependencies deleted successfully! 🗑️`, 'success')
+      setTrainers(trainers.filter((t) => t.id !== trainerToDelete.id))
+      
+      // Close dialog and reset state
+      setDeleteConfirmOpen(false)
+      setTrainerToDelete(null)
+      
+    } catch (error: any) {
+      console.error("[FORCE DELETE] Unexpected error:", error)
+      showToast(`Failed to force delete trainer: ${error?.message || "Unknown error occurred"}`, 'error')
+    }
+  }
+  
   const resetForm = () => {
     setFormData({
       name: "",
@@ -492,6 +639,68 @@ export default function TrainersPage() {
         isVisible={toast.isVisible}
         onClose={hideToast}
       />
+      
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">⚠️ Delete Trainer</DialogTitle>
+          </DialogHeader>
+          
+          {trainerToDelete && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <p className="text-lg font-medium text-gray-900 mb-2">
+                  Are you sure you want to delete <span className="font-bold text-red-600">{trainerToDelete.name}</span>?
+                </p>
+                
+                {trainerToDelete.schedules.length > 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                    <p className="text-sm text-yellow-800 font-medium mb-1">📅 Scheduled Sessions</p>
+                    <p className="text-sm text-yellow-700">
+                      This trainer has <span className="font-bold">{trainerToDelete.schedules.length}</span> scheduled sessions.
+                    </p>
+                  </div>
+                )}
+                
+                {trainerToDelete.leaves.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                    <p className="text-sm text-blue-800 font-medium mb-1">🏖️ Leave Records</p>
+                    <p className="text-sm text-blue-700">
+                      This trainer has <span className="font-bold">{trainerToDelete.leaves.length}</span> leave records.
+                    </p>
+                  </div>
+                )}
+                
+                <p className="text-sm text-gray-600">
+                  Choose an action to proceed:
+                </p>
+              </div>
+              
+              <div className="flex flex-col space-y-2">
+                <Button 
+                  onClick={handleForceDelete}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  🗑️ Force Delete Everything
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={() => setDeleteConfirmOpen(false)}
+                >
+                  ❌ Cancel
+                </Button>
+              </div>
+              
+              <div className="text-xs text-gray-500 text-center">
+                <p><strong>Force Delete</strong> will remove the trainer and ALL associated data permanently.</p>
+                <p>This action cannot be undone.</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   )
 }
