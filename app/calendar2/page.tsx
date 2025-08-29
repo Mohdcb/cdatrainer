@@ -16,6 +16,7 @@ export default function Calendar2Page() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedLocation, setSelectedLocation] = useState<string>("all")
   const [selectedCourse, setSelectedCourse] = useState<string>("all")
+  const [batchVisibility, setBatchVisibility] = useState<string>("active")
   const { toast, showToast, hideToast } = useToast()
   
   // State for trainer assignment changes
@@ -33,7 +34,7 @@ export default function Calendar2Page() {
     
     const weekDates = []
     for (let i = 0; i < 7; i++) { // All 7 days
-      const date = new Date(currentDate)
+      const date = new Date(startOfWeek) // ✅ FIXED: Use startOfWeek as base
       date.setDate(startOfWeek.getDate() + i)
       weekDates.push(date)
     }
@@ -41,15 +42,70 @@ export default function Calendar2Page() {
   }
 
   const weekDates = getCurrentWeekDates()
+  
+  // Debug week calculation
+  console.log(`[CALENDAR] Current date: ${currentDate.toDateString()}`)
+  console.log(`[CALENDAR] Week dates: ${weekDates.map(d => d.toDateString()).join(' → ')}`)
 
-  // Filter batches based on selected filters
+  // Filter batches based on selected filters and batch status
   const filteredBatches = useMemo(() => {
+    // Get the current week's date range for batch visibility logic
+    const currentWeekStart = weekDates[0] // Monday of current week
+    const currentWeekEnd = weekDates[6]   // Sunday of current week
+    
+    console.log(`[CALENDAR] Filtering batches for week: ${currentWeekStart.toDateString()} to ${currentWeekEnd.toDateString()}`)
+    
     return batches.filter((batch) => {
-      if (selectedLocation !== "all" && batch.location !== selectedLocation) return false
-      if (selectedCourse !== "all" && batch.courseId !== selectedCourse) return false
+      // Location filter
+      if (selectedLocation !== "all" && batch.location !== selectedLocation) {
+        console.log(`[CALENDAR] Batch ${batch.name} filtered out: location mismatch`)
+        return false
+      }
+      
+      // Course filter
+      if (selectedCourse !== "all" && batch.courseId !== selectedCourse) {
+        console.log(`[CALENDAR] Batch ${batch.name} filtered out: course mismatch`)
+        return false
+      }
+      
+      // Batch visibility filter based on user selection
+      if (batchVisibility === "active") {
+        // Show only active batches within current week
+        if (batch.status === "completed" || batch.status === "cancelled") {
+          console.log(`[CALENDAR] Batch ${batch.name} filtered out: status is ${batch.status}`)
+          return false
+        }
+        
+        // Hide batches that have ended before current week
+        if (batch.endDate) {
+          const batchEndDate = new Date(batch.endDate)
+          if (batchEndDate < currentWeekStart) {
+            console.log(`[CALENDAR] Batch ${batch.name} filtered out: ended on ${batchEndDate.toDateString()} before current week`)
+            return false
+          }
+        }
+        
+        // Hide batches that haven't started yet
+        if (batch.startDate) {
+          const batchStartDate = new Date(batch.startDate)
+          if (batchStartDate > currentWeekEnd) {
+            console.log(`[CALENDAR] Batch ${batch.name} filtered out: starts on ${batchStartDate.toDateString()} after current week`)
+            return false
+          }
+        }
+      } else if (batchVisibility === "completed") {
+        // Show only completed batches
+        if (batch.status !== "completed") {
+          console.log(`[CALENDAR] Batch ${batch.name} filtered out: status is not completed`)
+          return false
+        }
+      }
+      // If batchVisibility === "all", show all batches regardless of status
+      
+      console.log(`[CALENDAR] Batch ${batch.name} included: active and within date range`)
       return true
     })
-  }, [batches, selectedLocation, selectedCourse])
+  }, [batches, selectedLocation, selectedCourse, weekDates, batchVisibility])
 
   // Get sessions for a specific batch and date
   const getSessionsForBatchAndDate = (batchId: string, date: string) => {
@@ -266,12 +322,14 @@ export default function Calendar2Page() {
   const navigatePrevious = () => {
     const newDate = new Date(currentDate)
     newDate.setDate(newDate.getDate() - 7)
+    console.log(`[CALENDAR] Previous week: ${currentDate.toDateString()} → ${newDate.toDateString()}`)
     setCurrentDate(newDate)
   }
 
   const navigateNext = () => {
     const newDate = new Date(currentDate)
     newDate.setDate(newDate.getDate() + 7)
+    console.log(`[CALENDAR] Next week: ${currentDate.toDateString()} → ${newDate.toDateString()}`)
     setCurrentDate(newDate)
   }
 
@@ -345,9 +403,21 @@ export default function Calendar2Page() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={batchVisibility} onValueChange={setBatchVisibility}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Batch Visibility" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Show Active Only</SelectItem>
+                <SelectItem value="all">Show All Batches</SelectItem>
+                <SelectItem value="completed">Show Completed</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
+
+
 
             {/* Batch Calendar Table */}
       <Card>

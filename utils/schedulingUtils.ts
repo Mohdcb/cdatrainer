@@ -32,6 +32,7 @@ export function generateSchedule(
   subjects: Subject[],
   trainers: Trainer[],
   holidays: Holiday[],
+  globalSchedules?: ScheduleSession[],
 ): ScheduleSession[] {
   console.log(`[SCHEDULE] ===== GENERATE SCHEDULE CALLED =====`)
   console.log(`[SCHEDULE] Batch: ${batch.name}, Type: ${batch.batchType}`)
@@ -182,12 +183,16 @@ export function generateSchedule(
       }
 
     // Try to assign a trainer for this session - BUT DON'T FORCE IT
+    // Use global schedules to check for overlaps across ALL batches, not just current batch
+    const globalScheduleForOverlapCheck = globalSchedules || []
+    console.log(`[SCHEDULE] Using ${globalScheduleForOverlapCheck.length} global schedules for overlap detection`)
+    
     const sessionTrainer = findSubjectTrainer(
       currentDateForSchedule,
       currentSubject,
       trainers,
       batch,
-      schedule,
+      globalScheduleForOverlapCheck, // Use global schedules for overlap detection
       holidays,
       effectiveBatchType,
       subjects

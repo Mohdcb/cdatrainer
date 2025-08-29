@@ -108,7 +108,7 @@ export default function BatchesPage() {
     }
 
     if (course) {
-      const schedule = generateSchedule(newBatch, course, subjects, trainers, holidays)
+      const schedule = generateSchedule(newBatch, course, subjects, trainers, holidays, schedules)
       newBatch.generatedSchedule = schedule
 
       // Generate subject assignments for each subject in the course
@@ -539,11 +539,28 @@ export default function BatchesPage() {
     const batchIdNum = Number.parseInt(batchId)
     
     try {
-      // Step 1: Verify schedules exist for this batch
+      // Step 1: Verify schedules exist for this batch and check table structure
       console.log(`[DELETE] Checking for existing schedules for batch ${batchId}`)
+      
+      // First, let's check what columns exist in the schedules table
+      const { data: tableInfo, error: tableError } = await supabase
+        .from("schedules")
+        .select("*")
+        .limit(0)
+      
+      if (tableError) {
+        console.error("Failed to get table structure:", tableError)
+        setErrorMessage(`Failed to get table structure: ${tableError.message}`)
+        setErrorOpen(true)
+        return
+      }
+      
+      console.log(`[DELETE] Table structure check passed`)
+      
+      // Now try to fetch schedules
       const { data: existingSchedules, error: fetchError } = await supabase
         .from("schedules")
-        .select("id, date, subject_id, trainer_id")
+        .select("schedule_id, date, subject_id, trainer_id")
         .eq("batch_id", batchIdNum)
       
       if (fetchError) {
@@ -575,7 +592,7 @@ export default function BatchesPage() {
         // Step 3: Verify schedules were deleted
         const { data: remainingSchedules, error: verifyError } = await supabase
           .from("schedules")
-          .select("id")
+          .select("schedule_id")
           .eq("batch_id", batchIdNum)
         
         if (verifyError) {
@@ -624,7 +641,7 @@ export default function BatchesPage() {
           // Double-check schedules are still deleted before retry
           const { data: recheckSchedules } = await supabase
             .from("schedules")
-            .select("id")
+            .select("schedule_id")
             .eq("batch_id", batchIdNum)
           
           if (recheckSchedules && recheckSchedules.length > 0) {
@@ -701,7 +718,7 @@ export default function BatchesPage() {
     console.log(`[BATCH] Holidays: ${holidays.length}`)
 
     // Generate initial schedule
-    const initialSchedule = generateSchedule(batch, course, subjects, trainers, holidays)
+    const initialSchedule = generateSchedule(batch, course, subjects, trainers, holidays, schedules)
     console.log(`[BATCH] Initial schedule generated: ${initialSchedule.length} sessions`)
     console.log(`[BATCH] Assigned sessions: ${initialSchedule.filter(s => s.trainerId).length}`)
     console.log(`[BATCH] Unassigned sessions: ${initialSchedule.filter(s => !s.trainerId).length}`)
@@ -758,24 +775,16 @@ export default function BatchesPage() {
       const start_time = rawStart.length === 5 ? `${rawStart}:00` : rawStart
       const end_time = rawEnd.length === 5 ? `${rawEnd}:00` : rawEnd
       
-      // For unassigned sessions, we need to use a valid trainer ID that exists in the database
-      // Let's use the first available trainer as a placeholder, but mark it as unassigned in our logic
-      let trainer_id: number
+      // Handle trainer assignment for database insertion
+      let trainer_id: number | null = null
       if (s.trainerId && s.trainerId !== "unassigned") {
         trainer_id = Number.parseInt(s.trainerId)
+        console.log(`[SCHEDULE] Assigned session: ${s.subjectId} on ${s.date} to trainer ${trainer_id}`)
       } else {
-        // Find a valid trainer ID to use as placeholder
-        const firstTrainer = trainers.find(t => t.id.startsWith('t'))
-        if (firstTrainer) {
-          // Extract numeric ID from trainer ID (e.g., "t1" -> 1)
-          const numericId = firstTrainer.id.replace('t', '')
-          trainer_id = Number.parseInt(numericId)
-          console.log(`[SCHEDULE] Using placeholder trainer ID ${trainer_id} for unassigned session`)
-        } else {
-          // Fallback: use a default value that should exist
-          trainer_id = 1
-          console.log(`[SCHEDULE] Using fallback trainer ID ${trainer_id} for unassigned session`)
-        }
+        // Keep unassigned sessions as NULL in database
+        // If database doesn't allow NULL, we'll need to handle this differently
+        trainer_id = null
+        console.log(`[SCHEDULE] Unassigned session: ${s.subjectId} on ${s.date} - setting trainer_id to NULL`)
       }
       
       const row = {
@@ -815,9 +824,18 @@ export default function BatchesPage() {
       // ENHANCED: Insert ALL sessions, including unassigned ones
       // This ensures admins can see and assign trainers later
       console.log(`[SCHEDULE] Inserting ${rows.length} new sessions`)
+      console.log(`[SCHEDULE] Sample rows for insertion:`, rows.slice(0, 3).map(r => ({
+        batch_id: r.batch_id,
+        trainer_id: r.trainer_id,
+        subject_id: r.subject_id,
+        date: r.date,
+        status: r.status
+      })))
+      
       const { error: insError } = await supabase.from("schedules").insert(rows)
       if (insError) {
         console.error(`[SCHEDULE] Insert error:`, insError)
+        console.error(`[SCHEDULE] Error details:`, insError)
         throw insError
       }
       
@@ -849,14 +867,21 @@ export default function BatchesPage() {
           orig.subjectId === String(s.subject_id)
         )
         
-        // A session is unassigned if it was originally unassigned OR if it has the placeholder trainer
-        const isUnassigned = !originalSession?.trainerId || originalSession.trainerId === "unassigned"
+        // A session is unassigned if it has no trainer_id in the database OR if it was originally unassigned
+        const hasTrainerInDatabase = s.trainer_id !== null && s.trainer_id !== undefined
+        const wasOriginallyUnassigned = !originalSession?.trainerId || originalSession.trainerId === "unassigned"
+        
+        // Determine final status: unassigned if no trainer in DB OR was originally unassigned
+        const isUnassigned = !hasTrainerInDatabase || wasOriginallyUnassigned
         const trainerId = isUnassigned ? undefined : String(s.trainer_id)
         const status = trainerId ? "assigned" : "unassigned"
         
         // ENHANCED: Handle unassigned sessions properly
         if (isUnassigned) {
           console.log(`[SCHEDULE] Unassigned session found for date ${s.date}, subject ${s.subject_id}`)
+          console.log(`[SCHEDULE]   - Database trainer_id: ${s.trainer_id}`)
+          console.log(`[SCHEDULE]   - Original trainerId: ${originalSession?.trainerId}`)
+          console.log(`[SCHEDULE]   - Final status: ${status}`)
         }
         
         return {

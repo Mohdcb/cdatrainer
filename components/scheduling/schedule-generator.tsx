@@ -38,7 +38,7 @@ export function ScheduleGenerator({
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
-    const schedule = generateSchedule(batch, course, subjects, trainers, holidays)
+    const schedule = generateSchedule(batch, course, subjects, trainers, holidays, schedules)
     const scheduleWithConflicts = detectConflicts(schedule, trainers)
 
     setGeneratedSchedule(scheduleWithConflicts)
