@@ -303,6 +303,65 @@ export function generateSchedule(
     }
   })
   
+  // ENHANCED: Check for date range overlaps between subjects
+  console.log(`[SCHEDULE] ===== DATE RANGE OVERLAP CHECK =====`)
+  const trainerSubjectRanges = new Map<string, Array<{start: string, end: string, subjectId: string}>>()
+  
+  schedule.forEach(session => {
+    if (session.trainerId) {
+      if (!trainerSubjectRanges.has(session.trainerId)) {
+        trainerSubjectRanges.set(session.trainerId, [])
+      }
+      
+      const ranges = trainerSubjectRanges.get(session.trainerId)!
+      const existingRange = ranges.find(r => r.subjectId === session.subjectId)
+      
+      if (!existingRange) {
+        // Find the subject duration to calculate end date
+        const subject = subjects.find(s => s.id === session.subjectId)
+        if (subject) {
+          const startDate = new Date(session.date)
+          const endDate = new Date(startDate)
+          endDate.setDate(startDate.getDate() + subject.duration - 1)
+          
+          ranges.push({
+            start: session.date,
+            end: formatDate(endDate),
+            subjectId: session.subjectId
+          })
+          
+          console.log(`[SCHEDULE] Added range for ${session.trainerId}: ${session.subjectId} (${session.date} to ${formatDate(endDate)})`)
+        }
+      }
+    }
+  })
+  
+  // Check for overlaps between different subjects for the same trainer
+  trainerSubjectRanges.forEach((ranges, trainerId) => {
+    if (ranges.length > 1) {
+      for (let i = 0; i < ranges.length; i++) {
+        for (let j = i + 1; j < ranges.length; j++) {
+          const range1 = ranges[i]
+          const range2 = ranges[j]
+          
+          const start1 = new Date(range1.start)
+          const end1 = new Date(range1.end)
+          const start2 = new Date(range2.start)
+          const end2 = new Date(range2.end)
+          
+          // Check if ranges overlap
+          const overlaps = !(end1 < start2 || end2 < start1)
+          
+          if (overlaps) {
+            console.error(`[SCHEDULE] ❌ DATE RANGE OVERLAP: Trainer ${trainerId} has overlapping subjects!`)
+            console.error(`[SCHEDULE]   - ${range1.subjectId}: ${range1.start} to ${range1.end}`)
+            console.error(`[SCHEDULE]   - ${range2.subjectId}: ${range2.start} to ${range2.end}`)
+          }
+        }
+      }
+    }
+  })
+  
   console.log(`[SCHEDULE] Trainer overlap check complete`)
   
   // ENHANCED: Fill empty days with placeholder sessions for clarity
@@ -357,13 +416,34 @@ function findSubjectTrainer(
       return false
     }
 
-    // Step 3: SIMPLE CHECK - Does trainer already have ANY session on the start date?
+    // Step 3: CRITICAL - Check if trainer has ANY overlapping sessions during the subject duration
     const startDateStr = formatDate(startDate)
-    const hasSessionOnStartDate = existingSchedule.some(s => 
-      s.date === startDateStr && s.trainerId === trainer.id
-    )
-    if (hasSessionOnStartDate) {
-      console.log(`[TRAINER] BLOCKED: ${trainer.name} already has a session on ${startDateStr}`)
+    const endDate = new Date(startDate)
+    endDate.setDate(startDate.getDate() + subject.duration - 1) // -1 because start date counts as day 1
+    const endDateStr = formatDate(endDate)
+    
+    console.log(`[TRAINER] Checking ${trainer.name} for overlap: ${startDateStr} to ${endDateStr} (${subject.duration} days)`)
+    
+    // Check for ANY existing sessions that overlap with this date range
+    const hasOverlappingSessions = existingSchedule.some(s => {
+      if (s.trainerId !== trainer.id) return false
+      
+      const sessionDate = new Date(s.date)
+      const sessionStart = new Date(startDate)
+      const sessionEnd = new Date(endDate)
+      
+      // Check if session date falls within our subject date range
+      const overlaps = sessionDate >= sessionStart && sessionDate <= sessionEnd
+      
+      if (overlaps) {
+        console.log(`[TRAINER] OVERLAP DETECTED: ${trainer.name} has session on ${s.date} during ${startDateStr}-${endDateStr}`)
+      }
+      
+      return overlaps
+    })
+    
+    if (hasOverlappingSessions) {
+      console.log(`[TRAINER] BLOCKED: ${trainer.name} has overlapping sessions during ${startDateStr}-${endDateStr}`)
       return false
     }
 
