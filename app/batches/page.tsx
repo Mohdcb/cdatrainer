@@ -539,43 +539,118 @@ export default function BatchesPage() {
     const batchIdNum = Number.parseInt(batchId)
     
     try {
-      // First, delete all associated schedules
-      console.log(`[DELETE] Deleting schedules for batch ${batchId}`)
-      const { error: scheduleError } = await supabase
+      // Step 1: Verify schedules exist for this batch
+      console.log(`[DELETE] Checking for existing schedules for batch ${batchId}`)
+      const { data: existingSchedules, error: fetchError } = await supabase
         .from("schedules")
-        .delete()
+        .select("id, date, subject_id, trainer_id")
         .eq("batch_id", batchIdNum)
       
-      if (scheduleError) {
-        console.error("Failed to delete schedules:", scheduleError)
-        setErrorMessage(`Failed to delete schedules: ${scheduleError.message}`)
+      if (fetchError) {
+        console.error("Failed to fetch schedules:", fetchError)
+        setErrorMessage(`Failed to fetch schedules: ${fetchError.message}`)
         setErrorOpen(true)
         return
       }
       
-      console.log(`[DELETE] Schedules deleted successfully`)
+      console.log(`[DELETE] Found ${existingSchedules?.length || 0} schedules to delete`)
       
-      // Then delete the batch
+      // Step 2: Delete all associated schedules
+      if (existingSchedules && existingSchedules.length > 0) {
+        console.log(`[DELETE] Deleting ${existingSchedules.length} schedules for batch ${batchId}`)
+        const { error: scheduleError } = await supabase
+          .from("schedules")
+          .delete()
+          .eq("batch_id", batchIdNum)
+        
+        if (scheduleError) {
+          console.error("Failed to delete schedules:", scheduleError)
+          setErrorMessage(`Failed to delete schedules: ${scheduleError.message}`)
+          setErrorOpen(true)
+          return
+        }
+        
+        console.log(`[DELETE] Schedules deleted successfully`)
+        
+        // Step 3: Verify schedules were deleted
+        const { data: remainingSchedules, error: verifyError } = await supabase
+          .from("schedules")
+          .select("id")
+          .eq("batch_id", batchIdNum)
+        
+        if (verifyError) {
+          console.error("Failed to verify schedule deletion:", verifyError)
+          setErrorMessage(`Failed to verify schedule deletion: ${verifyError.message}`)
+          setErrorOpen(true)
+          return
+        }
+        
+        if (remainingSchedules && remainingSchedules.length > 0) {
+          console.error(`[DELETE] ERROR: ${remainingSchedules.length} schedules still exist after deletion!`)
+          setErrorMessage(`Failed to delete all schedules: ${remainingSchedules.length} still exist`)
+          setErrorOpen(true)
+          return
+        }
+        
+        console.log(`[DELETE] Schedule deletion verified - all schedules removed`)
+      } else {
+        console.log(`[DELETE] No schedules found for batch ${batchId}`)
+      }
+      
+      // Step 4: Delete the batch with retry mechanism
       console.log(`[DELETE] Deleting batch ${batchId}`)
-      const { error: batchError } = await supabase
-        .from("batches")
-        .delete()
-        .eq("batch_id", batchIdNum)
+      let batchError = null
+      let retryCount = 0
+      const maxRetries = 3
+      
+      while (retryCount < maxRetries) {
+        const { error } = await supabase
+          .from("batches")
+          .delete()
+          .eq("batch_id", batchIdNum)
+        
+        if (!error) {
+          console.log(`[DELETE] Batch deleted successfully on attempt ${retryCount + 1}`)
+          break
+        }
+        
+        batchError = error
+        retryCount++
+        
+        if (retryCount < maxRetries) {
+          console.log(`[DELETE] Batch deletion failed, retrying in 1 second... (attempt ${retryCount}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second before retry
+          
+          // Double-check schedules are still deleted before retry
+          const { data: recheckSchedules } = await supabase
+            .from("schedules")
+            .select("id")
+            .eq("batch_id", batchIdNum)
+          
+          if (recheckSchedules && recheckSchedules.length > 0) {
+            console.log(`[DELETE] Schedules reappeared, deleting again before retry`)
+            await supabase
+              .from("schedules")
+              .delete()
+              .eq("batch_id", batchIdNum)
+          }
+        }
+      }
       
       if (batchError) {
-        console.error("Failed to delete batch:", batchError)
-        setErrorMessage(`Failed to delete batch: ${batchError.message}`)
+        console.error(`Failed to delete batch after ${maxRetries} attempts:`, batchError)
+        setErrorMessage(`Failed to delete batch after ${maxRetries} attempts: ${batchError.message}`)
         setErrorOpen(true)
         return
       }
       
       console.log(`[DELETE] Batch deleted successfully`)
       
-      // Update local state
+      // Step 5: Update local state
       setBatches(batches.filter((b) => b.id !== batchId))
       setSchedules(schedules.filter((s) => s.batchId !== batchId))
       
-      // Close confirmation dialog and reset state
+      // Step 6: Close confirmation dialog and reset state
       setDeleteConfirmOpen(false)
       setBatchToDelete(null)
       
