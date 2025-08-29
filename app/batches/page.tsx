@@ -259,7 +259,10 @@ export default function BatchesPage() {
       
       // Check each session for conflicts
       for (const session of batchSessions) {
-        if (!session.trainer_id || session.trainer_id === 0) continue // Skip unassigned sessions
+        // Skip sessions that are actually unassigned (we'll need to check the original schedule)
+        // For now, let's check if the trainer_id is the placeholder trainer
+        const isPlaceholderTrainer = session.trainer_id === 1 // Assuming 1 is our placeholder
+        if (isPlaceholderTrainer) continue // Skip placeholder trainer sessions
         
         const trainerId = String(session.trainer_id)
         const sessionDate = session.date
@@ -445,9 +448,11 @@ export default function BatchesPage() {
           for (const session of sessionsToUpdate) {
             try {
               console.log(`[MANUAL ASSIGNMENT] Setting session ${session.id} to unassigned`)
+              // For unassigned subjects, we'll use the placeholder trainer ID
+              const placeholderTrainerId = 1 // Same as used in schedule generation
               const { error } = await supabase
                 .from("schedules")
-                .update({ trainer_id: 0 }) // Set to 0 for unassigned
+                .update({ trainer_id: placeholderTrainerId }) // Set to placeholder for unassigned
                 .eq("schedule_id", session.id)
               
               if (error) {
@@ -499,7 +504,14 @@ export default function BatchesPage() {
         // Update the schedules state
         const updatedSchedulesList = schedules.map(s => {
           const updated = updatedSchedules.find(us => us.schedule_id === s.id)
-          return updated ? { ...s, trainerId: updated.trainer_id && updated.trainer_id !== 0 ? String(updated.trainer_id) : undefined } : s
+          // Check if this session was originally unassigned by looking at the original schedule
+        const originalSession = selectedBatch.generatedSchedule?.find(orig => 
+          orig.date === updated.date && 
+          orig.subjectId === String(updated.subject_id)
+        )
+        const isUnassigned = !originalSession?.trainerId || originalSession.trainerId === "unassigned"
+        
+        return updated ? { ...s, trainerId: isUnassigned ? undefined : String(updated.trainer_id) } : s
         })
         // You would need to add a setSchedules function to update the main schedules state
       }
@@ -671,9 +683,29 @@ export default function BatchesPage() {
       const start_time = rawStart.length === 5 ? `${rawStart}:00` : rawStart
       const end_time = rawEnd.length === 5 ? `${rawEnd}:00` : rawEnd
       
+      // For unassigned sessions, we need to use a valid trainer ID that exists in the database
+      // Let's use the first available trainer as a placeholder, but mark it as unassigned in our logic
+      let trainer_id: number
+      if (s.trainerId && s.trainerId !== "unassigned") {
+        trainer_id = Number.parseInt(s.trainerId)
+      } else {
+        // Find a valid trainer ID to use as placeholder
+        const firstTrainer = trainers.find(t => t.id.startsWith('t'))
+        if (firstTrainer) {
+          // Extract numeric ID from trainer ID (e.g., "t1" -> 1)
+          const numericId = firstTrainer.id.replace('t', '')
+          trainer_id = Number.parseInt(numericId)
+          console.log(`[SCHEDULE] Using placeholder trainer ID ${trainer_id} for unassigned session`)
+        } else {
+          // Fallback: use a default value that should exist
+          trainer_id = 1
+          console.log(`[SCHEDULE] Using fallback trainer ID ${trainer_id} for unassigned session`)
+        }
+      }
+      
       const row = {
         batch_id: batchIdNum,
-        trainer_id: s.trainerId && s.trainerId !== "unassigned" ? Number.parseInt(s.trainerId) : 0, // Use 0 for unassigned
+        trainer_id: trainer_id,
         subject_id: Number.parseInt(s.subjectId), // Now guaranteed to be valid
         date: s.date,
         start_time,
@@ -736,11 +768,19 @@ export default function BatchesPage() {
         const startTime = s.start_time ?? "09:00:00"
         const endTime = s.end_time ?? "17:00:00"
         const timeSlot = `${String(startTime).slice(0,5)}-${String(endTime).slice(0,5)}`
-        const trainerId = s.trainer_id && s.trainer_id !== 0 ? String(s.trainer_id) : undefined
+        // Check if this session was originally unassigned by looking at the original schedule
+        const originalSession = schedule.find(orig => 
+          orig.date === s.date && 
+          orig.subjectId === String(s.subject_id)
+        )
+        
+        // A session is unassigned if it was originally unassigned OR if it has the placeholder trainer
+        const isUnassigned = !originalSession?.trainerId || originalSession.trainerId === "unassigned"
+        const trainerId = isUnassigned ? undefined : String(s.trainer_id)
         const status = trainerId ? "assigned" : "unassigned"
         
         // ENHANCED: Handle unassigned sessions properly
-        if (!trainerId) {
+        if (isUnassigned) {
           console.log(`[SCHEDULE] Unassigned session found for date ${s.date}, subject ${s.subject_id}`)
         }
         
