@@ -375,6 +375,10 @@ export default function Calendar2Page() {
               <span>Batch Not Started</span>
             </div>
             <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-gray-100 border border-gray-300 rounded"></div>
+              <span>Batch Ended</span>
+            </div>
+            <div className="flex items-center space-x-2">
               <div className="w-3 h-3 bg-purple-50 border border-purple-200 rounded"></div>
               <span>Non-Working Day</span>
             </div>
@@ -463,10 +467,12 @@ export default function Calendar2Page() {
                       return dayOfWeek >= 1 && dayOfWeek <= 5
                     })()
                     
-                    // Check if batch has started (compare with batch start date)
+                    // Check if batch has started and ended (compare with batch dates)
                     const batchStartDate = new Date(batch.startDate)
+                    const batchEndDate = new Date(batch.endDate)
                     const currentDate = new Date(dateStr)
                     const batchHasStarted = currentDate >= batchStartDate
+                    const batchHasEnded = currentDate > batchEndDate
                     
                     // Get the session for this date from schedules table
                     const session = daySessions[0] // Take first session if multiple exist
@@ -498,6 +504,18 @@ export default function Calendar2Page() {
                           </div>
                           <div className="text-center text-gray-400 text-xs">
                             Starts {batchStartDate.toLocaleDateString()}
+                          </div>
+                        </div>
+                      )
+                    } else if (batchHasEnded) {
+                      dayStatus = "ended"
+                      dayContent = (
+                        <div className="space-y-2">
+                          <div className="text-center text-gray-400 text-xs font-medium mb-2">
+                            🏁 Batch Ended
+                          </div>
+                          <div className="text-center text-gray-400 text-xs">
+                            Ended {batchEndDate.toLocaleDateString()}
                           </div>
                         </div>
                       )
@@ -658,6 +676,8 @@ export default function Calendar2Page() {
                       cellClassName += " bg-red-50"
                     } else if (dayStatus === "not-started") {
                       cellClassName += " bg-gray-50"
+                    } else if (dayStatus === "ended") {
+                      cellClassName += " bg-gray-100"
                     } else if (dayStatus === "non-working") {
                       cellClassName += " bg-purple-50"
                     } else if (dayStatus === "scheduled" && !session?.trainerId) {
