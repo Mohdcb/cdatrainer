@@ -32,8 +32,8 @@ export default function BatchesPage() {
     name: "",
     courseId: "",
     location: "",
-    startTime: "10:00",
-    endTime: "16:00", // Default 10:00 AM - 4:00 PM for offline batches
+    startTime: "09:00",
+    endTime: "11:00", // Default 9:00 AM - 11:00 AM for online batches
     batchType: "weekday" as "weekday" | "weekend",
     startDate: "",
     endDate: "",
@@ -1006,8 +1006,8 @@ export default function BatchesPage() {
       name: "",
       courseId: "",
       location: "",
-      startTime: "10:00",
-      endTime: "16:00", // Will be adjusted based on location
+      startTime: "09:00",
+      endTime: "11:00", // Default 2-hour slot for online
       batchType: "weekday",
       startDate: "",
       endDate: "",
@@ -1691,82 +1691,33 @@ function BatchForm({ formData, setFormData, courses, trainers, onSubmit, onCance
 
         {isOnlineLocation ? (
           <div className="space-y-4">
-            <div className="text-sm text-muted-foreground bg-blue-50 p-3 rounded-lg border border-blue-200">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-4 h-4 text-blue-600" />
-                <span className="font-medium text-blue-800">Online Session Rules</span>
-              </div>
-              <ul className="text-xs text-blue-700 space-y-1">
-                <li>• Maximum session duration: 2 hours</li>
-                <li>• Recommended: 1.5 - 2 hours for optimal engagement</li>
-                <li>• Break time included in session duration</li>
-              </ul>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="startTime">Start Time</Label>
-                <Input
-                  id="startTime"
-                  type="time"
-                  value={formData.startTime}
-                  onChange={(e) => {
-                    const startTime = e.target.value
-                    setFormData({ ...formData, startTime })
-                    
-                                         // Auto-calculate end time to maintain 2-hour limit
-                     if (startTime) {
-                       const start = new Date(`2000-01-01T${startTime}`)
-                       const end = new Date(start.getTime() + 2 * 60 * 60 * 1000) // +2 hours
-                       const endTime = end.toTimeString().slice(0, 5)
-                       setFormData((prev: any) => ({ ...prev, endTime }))
-                     }
-                  }}
-                />
-              </div>
-              <div>
-                <Label htmlFor="endTime">End Time (Max 2 hours)</Label>
-                <Input
-                  id="endTime"
-                  type="time"
-                  value={formData.endTime}
-                  onChange={(e) => {
-                    const endTime = e.target.value
-                    const startTime = formData.startTime
-                    
-                    if (startTime && endTime) {
-                      const start = new Date(`2000-01-01T${startTime}`)
-                      const end = new Date(`2000-01-01T${endTime}`)
-                      const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-                      
-                                             if (durationHours > 2) {
-                         // Reset to 2 hours if exceeded
-                         const maxEnd = new Date(start.getTime() + 2 * 60 * 60 * 1000)
-                         const maxEndTime = maxEnd.toTimeString().slice(0, 5)
-                         setFormData((prev: any) => ({ ...prev, endTime: maxEndTime }))
-                         
-                         // Show warning - we'll handle this in the parent component
-                         console.warn("Online sessions cannot exceed 2 hours. End time adjusted automatically.")
-                       } else {
-                         setFormData({ ...formData, endTime })
-                       }
-                    } else {
-                      setFormData({ ...formData, endTime })
-                    }
-                  }}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Session duration: {(() => {
-                    if (formData.startTime && formData.endTime) {
-                      const start = new Date(`2000-01-01T${formData.startTime}`)
-                      const end = new Date(`2000-01-01T${formData.endTime}`)
-                      const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-                      return `${durationHours.toFixed(1)} hours`
-                    }
-                    return "Not set"
-                  })()}
-                </p>
-              </div>
+            <div>
+              <Label htmlFor="timeSlot">Time Slot</Label>
+              <Select
+                value={`${formData.startTime}-${formData.endTime}`}
+                onValueChange={(timeSlot) => {
+                  // Split the time slot into start and end times for database storage
+                  const [startTime, endTime] = timeSlot.split('-')
+                  setFormData({ ...formData, startTime, endTime })
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select time slot" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="09:00-11:00">09:00 - 11:00 (2 hours)</SelectItem>
+                  <SelectItem value="10:00-12:00">10:00 - 12:00 (2 hours)</SelectItem>
+                  <SelectItem value="11:00-13:00">11:00 - 13:00 (2 hours)</SelectItem>
+                  <SelectItem value="12:00-14:00">12:00 - 14:00 (2 hours)</SelectItem>
+                  <SelectItem value="13:00-15:00">13:00 - 15:00 (2 hours)</SelectItem>
+                  <SelectItem value="14:00-16:00">14:00 - 16:00 (2 hours)</SelectItem>
+                  <SelectItem value="15:00-17:00">15:00 - 17:00 (2 hours)</SelectItem>
+                  <SelectItem value="16:00-18:00">16:00 - 18:00 (2 hours)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                All online sessions are 2 hours for optimal engagement
+              </p>
             </div>
           </div>
         ) : isPhysicalLocation ? (

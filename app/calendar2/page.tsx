@@ -468,27 +468,34 @@ export default function Calendar2Page() {
         </CardHeader>
         <CardContent>
           {/* Batch Calendar Grid */}
-          <div className="overflow-x-auto" style={{ width: '1460px', overflow: 'scroll' }}>
-            <div className="grid gap-0 min-w-max border border-gray-200 rounded-lg overflow-hidden" style={{ gridTemplateColumns: '200px repeat(7, 180px)' }}>
-            {/* Header Row */}
-            <div className="p-3 text-left font-medium text-gray-700 bg-gray-50 sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-gray-200">
-              <div className="flex items-center space-x-2">
-                <Users className="w-4 h-4" />
-                <span>Batch</span>
-              </div>
-            </div>
-            {weekDates.map((date, index) => (
-              <div key={index} className="p-3 text-center font-medium text-gray-700 bg-gray-50 border-r border-gray-200">
-                <div className="flex flex-col items-center">
-                  <span className="text-sm font-medium">
-                    {date.toLocaleDateString("en-US", { weekday: "short" })}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
+          <div className="w-full">
+            <div
+              className="grid gap-0 border border-gray-200 rounded-lg overflow-hidden"
+              style={{ gridTemplateColumns: '200px repeat(7, 1fr)' }} // <-- responsive columns
+            >
+              {/* Header Row */}
+              <div className="p-2 text-left font-medium text-gray-700 bg-gray-50 sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <Users className="w-3 h-3" />
+                  <span className="text-sm">Batch</span>
                 </div>
               </div>
-            ))}
+
+              {weekDates.map((date, index) => (
+                <div
+                  key={index}
+                  className="p-2 text-center font-medium text-gray-700 bg-gray-50 border-r border-gray-200"
+                >
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium">
+                      {date.toLocaleDateString("en-US", { weekday: "short" })}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                </div>
+              ))}
             {/* Batch Rows */}
             {filteredBatches.map((batch) => {
               const course = courses.find(c => c.id === batch.courseId)
@@ -498,10 +505,10 @@ export default function Calendar2Page() {
               return (
                 <div key={batch.id} className="contents">
                   {/* Batch Info Column */}
-                  <div key={`${batch.id}-info`} className="p-3 bg-white sticky left-0 z-20 border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-b border-gray-200">
-                    <div className="space-y-2">
-                      <div className="font-medium text-gray-900">{batch.name}</div>
-                      <div className="text-sm text-gray-600">
+                  <div key={`${batch.id}-info`} className="p-2 bg-white sticky left-0 z-20 border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-b border-gray-200">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-gray-900">{batch.name}</div>
+                      <div className="text-xs text-gray-600">
                         {course?.name} • {batch.location}
                       </div>
                       <div className="text-xs text-gray-500">
@@ -549,6 +556,27 @@ export default function Calendar2Page() {
                     const daySubject = session ? subjects.find(s => s.id === session.subjectId) : null
                     const currentTrainer = trainers.find(t => t.id === session?.trainerId)
                     
+                                                                // Calculate which day of the subject this is
+                      let subjectDayNumber = null
+                      if (daySubject && session) {
+                        // Find all sessions for this batch and subject, sorted by date
+                        const allSubjectSessions = schedules
+                          .filter(s => s.batchId === batch.id && s.subjectId === daySubject.id)
+                          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        
+                        // Find the index of current session in the sorted list
+                        const currentSessionIndex = allSubjectSessions.findIndex(s => s.date === dateStr)
+                        if (currentSessionIndex !== -1) {
+                          subjectDayNumber = currentSessionIndex + 1 // +1 because index is 0-based
+                        }
+                        
+                        // Debug logging for subject day calculation
+                        console.log(`[CALENDAR] Subject day calculation for ${batch.name} - ${daySubject.name} on ${dateStr}:`)
+                        console.log(`[CALENDAR]   - Total sessions for this subject: ${allSubjectSessions.length}`)
+                        console.log(`[CALENDAR]   - Current session index: ${currentSessionIndex}`)
+                        console.log(`[CALENDAR]   - Subject day number: ${subjectDayNumber}`)
+                      }
+                    
                     // Determine what to show for this day
                     let dayContent
                     let dayStatus = "normal"
@@ -564,14 +592,14 @@ export default function Calendar2Page() {
                       dayStatus = "not-started"
                       dayContent = (
                         <div className="flex items-center justify-center h-full text-gray-400 text-xs">
-                          Batch Not Started
+                          Not Started
                         </div>
                       )
                     } else if (batchHasEnded) {
                       dayStatus = "ended"
                       dayContent = (
                         <div className="flex items-center justify-center h-full text-gray-400 text-xs">
-                          Batch Ended
+                          Ended
                         </div>
                       )
                     } else if (!isWorkingDayForBatch) {
@@ -579,32 +607,37 @@ export default function Calendar2Page() {
                       dayStatus = "non-working"
                       dayContent = (
                         <div className="flex items-center justify-center h-full text-gray-500 text-xs">
-                          Non-Working Day
+                          Non-Working
                         </div>
                       )
                     } else if (daySubject) {
                       // Subject is scheduled for this day
                       dayStatus = "scheduled"
-                      dayContent = (
-                        <div className="space-y-2 flex flex-col items-center">
-                          <div className="font-medium text-gray-700 mb-2 text-center">
-                            {daySubject.name}
-                          </div>
+                                            dayContent = (
+                        <div className="space-y-1 flex flex-col items-center">
+                            <div className="text-gray-700 mb-1 text-center">
+                            <div className="text-center">
+                              <span className="text-xs font-semibold">{daySubject.name}</span>
+                              {subjectDayNumber && (
+                                <span className="text-blue-600 text-xs font-medium"> - {subjectDayNumber}</span>
+                              )}
+                            </div>
+                            </div>
                           
-                          {/* Trainer Assignment Dropdown */}
-                          <Select
-                            value={session?.trainerId || "unassigned"}
-                            onValueChange={(trainerId) => {
-                              if (trainerId === "unassigned") {
-                                handleTrainerChange(batch.id, daySubject.id, dateStr, null)
-                              } else {
-                                handleTrainerChange(batch.id, daySubject.id, dateStr, trainerId)
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="Assign trainer" />
-                            </SelectTrigger>
+                                                      {/* Trainer Assignment Dropdown */}
+                            <Select
+                              value={session?.trainerId || "unassigned"}
+                              onValueChange={(trainerId) => {
+                                if (trainerId === "unassigned") {
+                                  handleTrainerChange(batch.id, daySubject.id, dateStr, null)
+                                } else {
+                                  handleTrainerChange(batch.id, daySubject.id, dateStr, trainerId)
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-6 text-xs">
+                                <SelectValue placeholder="Assign trainer" />
+                              </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="unassigned">
                                 <span className="text-red-600">Unassigned</span>
@@ -647,43 +680,43 @@ export default function Calendar2Page() {
                           {/* Show status badge */}
                           {!session?.trainerId && (
                             <div className="text-center">
-                              <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
-                                No Trainer Assigned
+                              <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 px-1 py-0 h-4">
+                                No Trainer
                               </Badge>
                             </div>
                           )}
                         </div>
                       )
-                    } else {
+                                        } else {
                       // No subject scheduled for this day
                       dayStatus = "no-class"
                       dayContent = (
-                        <div className="space-y-2">
-                          <div className="text-center text-gray-400 text-xs mb-2">
-                            No Class Scheduled
-                          </div>
+                          <div className="space-y-1">
+                            <div className="text-center text-gray-400 text-xs mb-1">
+                            No Class
+                            </div>
                           
-                          {/* Trainer Assignment Dropdown for unscheduled days */}
-                          <Select
-                            value="unassigned"
-                            onValueChange={(trainerId) => {
-                              if (trainerId !== "unassigned") {
-                                // Create a new session with the selected trainer
-                                // We need to get a subject for this day
-                                const availableSubject = subjects.find(s => {
-                                  const course = courses.find(c => c.id === batch.courseId)
-                                  return course?.subjects?.includes(s.id)
-                                })
-                                
-                                if (availableSubject) {
-                                  handleTrainerChange(batch.id, availableSubject.id, dateStr, trainerId)
+                                                      {/* Trainer Assignment Dropdown for unscheduled days */}
+                            <Select
+                              value="unassigned"
+                              onValueChange={(trainerId) => {
+                                if (trainerId !== "unassigned") {
+                                  // Create a new session with the selected trainer
+                                  // We need to get a subject for this day
+                                  const availableSubject = subjects.find(s => {
+                                    const course = courses.find(c => c.id === batch.courseId)
+                                    return course?.subjects?.includes(s.id)
+                                  })
+                                  
+                                  if (availableSubject) {
+                                    handleTrainerChange(batch.id, availableSubject.id, dateStr, trainerId)
+                                  }
                                 }
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="Schedule & assign trainer" />
-                            </SelectTrigger>
+                              }}
+                            >
+                              <SelectTrigger className="h-6 text-xs">
+                                <SelectValue placeholder="Schedule & assign" />
+                              </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="unassigned">
                                 <span className="text-gray-500">No class scheduled</span>
@@ -720,7 +753,7 @@ export default function Calendar2Page() {
                     }
                     
                     // Apply different background colors based on status
-                    let cellClassName = "p-2 border-r border-gray-200 border-b border-gray-200"
+                    let cellClassName = "p-1 border-r border-gray-200 border-b border-gray-200"
                     if (dayStatus === "holiday") {
                       cellClassName += " bg-red-50"
                     } else if (dayStatus === "not-started") {
